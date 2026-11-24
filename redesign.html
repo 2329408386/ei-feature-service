@@ -810,23 +810,27 @@ body.present .page { font-size: 1.06rem; }
   <h3>1. 技术栈</h3>
   <div class="table-wrap"><table class="nowrap-first">
     <tr><th>部分</th><th>选型</th></tr>
-    <tr><td>语言</td><td>Python 3.11</td></tr>
+    <tr><td>语言</td><td>Python 3.12（<code>.python-version</code> 写 <code>3.12</code>，<code>requires-python = "==3.12.*"</code>）</td></tr>
+    <tr><td>依赖管理</td><td>uv：依赖写在 <code>pyproject.toml</code>，全部用 <code>==</code> 固定版本；<code>uv.lock</code> 提交到仓库；不使用 requirements.txt</td></tr>
     <tr><td>Web 框架</td><td>FastAPI + Pydantic v2 + uvicorn</td></tr>
-    <tr><td>数据库</td><td>PostgreSQL 14+；SQLAlchemy 2.0（async）+ asyncpg；迁移用 Alembic</td></tr>
+    <tr><td>数据库</td><td>PostgreSQL 14+；SQLAlchemy 2.0（async）+ psycopg 3（<code>postgresql+psycopg://</code>，同一驱动支持同步和异步）；迁移用 Alembic</td></tr>
     <tr><td>Redis</td><td>redis-py 5（<code>redis.asyncio</code>），使用 Stream + 消费组</td></tr>
     <tr><td>对象存储</td><td>MinIO Python SDK（<code>minio</code>）</td></tr>
     <tr><td>沙箱</td><td><code>pebble.ProcessPool</code>（支持单任务超时并杀掉子进程）</td></tr>
     <tr><td>数值库</td><td>numpy（特征包和 <code>eifeature.ops</code> 可用）</td></tr>
     <tr><td>配置</td><td>pydantic-settings，全部读环境变量</td></tr>
-    <tr><td>测试</td><td>pytest + pytest-asyncio + httpx；本地依赖用 docker-compose（postgres、redis、minio）</td></tr>
+    <tr><td>测试</td><td>pytest + pytest-asyncio + httpx + fakeredis；集成测试的依赖用 docker-compose（postgres、redis、minio）；代码检查 ruff</td></tr>
     <tr><td>前端</td><td>Vue 3 + TypeScript + Vite + Element Plus + Pinia + ECharts，放在 <code>web/</code></td></tr>
-    <tr><td>部署</td><td>一个镜像，两个进程：<code>api</code>（uvicorn）和 <code>worker</code>（<code>python -m ei_feature_service.worker</code>），可分别扩副本</td></tr>
+    <tr><td>部署</td><td>一个镜像，两个进程：<code>api</code>（<code>uv run uvicorn ei_feature_service.main:app</code>）和 <code>worker</code>（<code>uv run python -m ei_feature_service.worker</code>），可分别扩副本</td></tr>
   </table></div>
 
   <h3>2. 代码仓目录</h3>
 <pre><code>ei-feature-service/
-├── pyproject.toml              <span class="c"># 依赖、ruff、pytest 配置</span>
-├── Dockerfile
+├── pyproject.toml              <span class="c"># 依赖（== 固定版本）、ruff、pytest 配置，见下</span>
+├── uv.lock                     <span class="c"># uv lock 生成，提交到仓库</span>
+├── .python-version             <span class="c"># 3.12</span>
+├── .env.example                <span class="c"># 第 3 节的环境变量示例，python-dotenv 加载</span>
+├── Dockerfile                  <span class="c"># 基于 python:3.12-slim，uv sync --frozen --no-dev</span>
 ├── docker-compose.yml          <span class="c"># postgres:16, redis:7, minio（本地开发和集成测试）</span>
 ├── alembic.ini
 ├── migrations/versions/0001_init.py   <span class="c"># 建表，内容见“结果 · 设计说明”里的 schema.sql</span>
@@ -858,10 +862,66 @@ body.present .page { font-size: 1.06rem; }
 ├── tests/                      <span class="c"># unit/ 与 integration/</span>
 └── web/                        <span class="c"># 前端（第 11 节）</span></code></pre>
 
+  <div class="file">pyproject.toml</div>
+<pre><code>[project]
+name = <span class="s">"ei-feature-service"</span>
+version = <span class="s">"0.1.0"</span>
+requires-python = <span class="s">"==3.12.*"</span>
+dependencies = [
+    <span class="s">"alembic==1.18.5"</span>,
+    <span class="s">"fastapi==0.139.2"</span>,
+    <span class="s">"uvicorn[standard]==0.51.0"</span>,
+    <span class="s">"sqlalchemy==2.0.51"</span>,
+    <span class="s">"pydantic==2.13.4"</span>,
+    <span class="s">"pydantic-settings==2.14.2"</span>,
+    <span class="s">"psycopg[binary]==3.3.4"</span>,
+    <span class="s">"python-multipart==0.0.32"</span>,   <span class="c"># 上传特征包</span>
+    <span class="s">"python-dotenv==1.2.2"</span>,
+    <span class="s">"anyio==4.16.0"</span>,              <span class="c"># to_thread 调同步的 GDE SDK</span>
+    <span class="s">"redis==7.1.0"</span>,
+    <span class="s">"minio==7.2.20"</span>,
+    <span class="s">"pebble==5.2.3"</span>,              <span class="c"># 沙箱进程池</span>
+    <span class="s">"numpy==2.5.5"</span>,
+    <span class="c"># GDE SDK：包名和版本待数据底座确认，确认后在这里加一行 == 固定版本</span>
+]
+
+[dependency-groups]
+dev = [
+    <span class="s">"pytest==9.2.0"</span>,
+    <span class="s">"pytest-asyncio==1.5.0"</span>,
+    <span class="s">"httpx==0.28.1"</span>,
+    <span class="s">"fakeredis==2.41.0"</span>,
+    <span class="s">"ruff==0.17.6"</span>,
+]
+
+[build-system]
+requires = [<span class="s">"hatchling==1.33.0"</span>]
+build-backend = <span class="s">"hatchling.build"</span>
+
+[tool.hatch.build.targets.wheel]
+packages = [<span class="s">"src/ei_feature_service"</span>, <span class="s">"src/eifeature"</span>]
+
+[tool.pytest.ini_options]
+asyncio_mode = <span class="s">"auto"</span>
+testpaths = [<span class="s">"tests"</span>]
+
+[tool.ruff]
+line-length = 120
+target-version = <span class="s">"py312"</span></code></pre>
+  <p class="muted">这组版本已用 <code>uv lock</code> 在 Python 3.12 下验证可以一起解析。新增依赖一律 <code>uv add "包名==版本"</code>，不写 <code>&gt;=</code>、<code>~=</code>。</p>
+  <div class="file">常用命令</div>
+<pre><code>uv sync                                          <span class="c"># 安装依赖（含 dev 组）</span>
+docker compose up -d                             <span class="c"># 本地 postgres / redis / minio</span>
+uv run alembic upgrade head                      <span class="c"># 建表</span>
+uv run uvicorn ei_feature_service.main:app --reload --port 8000
+uv run python -m ei_feature_service.worker
+uv run pytest
+uv run ruff check . &amp;&amp; uv run ruff format --check .</code></pre>
+
   <h3>3. 配置（环境变量）</h3>
   <div class="table-wrap"><table>
     <tr><th>变量</th><th>默认值</th><th>说明</th></tr>
-    <tr><td><code>EIF_DATABASE_URL</code></td><td>—</td><td><code>postgresql+asyncpg://…</code></td></tr>
+    <tr><td><code>EIF_DATABASE_URL</code></td><td>—</td><td><code>postgresql+psycopg://user:pwd@host:5432/db</code></td></tr>
     <tr><td><code>EIF_REDIS_URL</code></td><td>—</td><td>GDE 提供的 Redis</td></tr>
     <tr><td><code>EIF_RUN_DONE_STREAM</code></td><td><code>gde:run:done</code></td><td>执行结束通知的 Stream 键</td></tr>
     <tr><td><code>EIF_CONSUMER_GROUP</code></td><td><code>ei-feature-service</code></td><td>消费组；消费者名取 <code>{hostname}-{pid}</code></td></tr>
