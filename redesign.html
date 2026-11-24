@@ -857,14 +857,15 @@ body.present .page { font-size: 1.06rem; }
 │       ├── errors.py      <span class="c"># AppError、错误码、FastAPI 异常处理</span>
 │       ├── auth.py        <span class="c"># 从 X-User 取当前用户</span>
 │       ├── gde.py         <span class="c"># GdeClient 协议、SdkGdeClient、FakeGdeClient（第 8 节）</span>
-│       ├── storage.py     <span class="c"># MinIO 读写特征包、本地缓存、sha256 校验</span>
+│       ├── storage.py     <span class="c"># MinIO / 本地目录读写特征包、本地缓存、sha256 校验</span>
 │       ├── stream.py      <span class="c"># Redis Stream 读取、确认、认领</span>
 │       ├── limits.py      <span class="c"># 信号量、熔断器</span>
 │       ├── semver.py      <span class="c"># 版本号解析与比较</span>
 │       └── timeutil.py    <span class="c"># 时区、整点、日期区间</span>
 └── test/
-    ├── conftest.py        <span class="c"># FakeGdeClient、fakeredis、测试库连接</span>
-    ├── unit/              <span class="c"># 不依赖外部服务</span>
+    ├── conftest.py        <span class="c"># 公共夹具</span>
+    ├── fixtures/          <span class="c"># 示例特征包 gas_flow_diffmean（feature.json + compute.py）</span>
+    ├── unit/              <span class="c"># 不依赖外部服务（沙箱测试会起子进程）</span>
     └── integration/       <span class="c"># 需要 PostgreSQL，连接取 config.json 的 database.url</span></code></pre>
   <p class="muted">导入统一写 <code>from src.util.config import settings</code> 这种形式；根目录即工作目录，pytest 设 <code>pythonpath = ["."]</code>。特征包里写的是 <code>from eifeature import …</code>，沙箱子进程启动时执行 <code>sys.modules["eifeature"] = src.eifeature</code> 让它可以导入。</p>
 
@@ -951,6 +952,7 @@ uv run pytest     <span class="c"># 测试</span></code></pre>
   <ul>
     <li><code>src/util/config.py</code> 用 Pydantic 模型读取并校验这个文件，模块级单例 <code>settings</code>；缺字段或类型错误时启动直接报错退出。</li>
     <li><code>gde.fake=true</code> 时用内存版 <code>FakeGdeClient</code>（本地开发、测试）；<code>gde.sdk</code> 原样传给 GDE SDK 的初始化函数。</li>
+    <li><code>minio.endpoint</code> 写成 <code>file://./data/packages</code> 时改用本地目录存特征包（相对路径基于项目根目录），本地开发不必启动 MinIO。</li>
     <li><code>server</code> 可省略，默认 <code>0.0.0.0:8000</code>。</li>
   </ul>
   <p>其余参数都是 <code>src/util/config.py</code> 里的常量，不放进配置文件：</p>

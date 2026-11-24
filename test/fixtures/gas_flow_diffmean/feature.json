@@ -1,0 +1,6 @@
+{
+  "id": "gas_flow_diffmean",
+  "version": "1.0.0",
+  "desc": "主刻蚀步骤（210、212）气体流量实际值与设定值之差的均值",
+  "output": {"unit": "sccm"}
+}
