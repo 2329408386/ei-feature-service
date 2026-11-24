@@ -807,82 +807,86 @@ body.present .page { font-size: 1.06rem; }
   <h2>照着这一页就能写出代码</h2>
   <p class="lede">本页把前三页的设计落到工程细节：技术栈、目录、配置、接口的请求与响应、状态机、GDE SDK 适配层、计算引擎的处理流程、前端页面和验收标准。前三页（含各页“设计说明”弹窗里的 schema.sql）与本页一起构成完整规格；两处不一致时以本页为准。</p>
 
-  <h3>1. 技术栈</h3>
+  <h3>1. 技术栈与运行方式</h3>
   <div class="table-wrap"><table class="nowrap-first">
     <tr><th>部分</th><th>选型</th></tr>
-    <tr><td>语言</td><td>Python 3.12（<code>.python-version</code> 写 <code>3.12</code>，<code>requires-python = "==3.12.*"</code>）</td></tr>
-    <tr><td>依赖管理</td><td>uv：依赖写在 <code>pyproject.toml</code>，全部用 <code>==</code> 固定版本；<code>uv.lock</code> 提交到仓库；不使用 requirements.txt</td></tr>
-    <tr><td>Web 框架</td><td>FastAPI + Pydantic v2 + uvicorn</td></tr>
-    <tr><td>数据库</td><td>PostgreSQL 14+；SQLAlchemy 2.0（async）+ psycopg 3（<code>postgresql+psycopg://</code>，同一驱动支持同步和异步）；迁移用 Alembic</td></tr>
-    <tr><td>Redis</td><td>redis-py 5（<code>redis.asyncio</code>），使用 Stream + 消费组</td></tr>
-    <tr><td>对象存储</td><td>MinIO Python SDK（<code>minio</code>）</td></tr>
-    <tr><td>沙箱</td><td><code>pebble.ProcessPool</code>（支持单任务超时并杀掉子进程）</td></tr>
-    <tr><td>数值库</td><td>numpy（特征包和 <code>eifeature.ops</code> 可用）</td></tr>
-    <tr><td>配置</td><td>pydantic-settings，全部读环境变量</td></tr>
-    <tr><td>测试</td><td>pytest + pytest-asyncio + httpx + fakeredis；集成测试的依赖用 docker-compose（postgres、redis、minio）；代码检查 ruff</td></tr>
-    <tr><td>前端</td><td>Vue 3 + TypeScript + Vite + Element Plus + Pinia + ECharts，放在 <code>web/</code></td></tr>
-    <tr><td>部署</td><td>一个镜像，两个进程：<code>api</code>（<code>uv run uvicorn ei_feature_service.main:app</code>）和 <code>worker</code>（<code>uv run python -m ei_feature_service.worker</code>），可分别扩副本</td></tr>
+    <tr><td>语言</td><td>Python 3.12</td></tr>
+    <tr><td>依赖管理</td><td>uv；依赖全部用 <code>==</code> 固定版本，<code>uv.lock</code> 提交到仓库</td></tr>
+    <tr><td>Web</td><td>FastAPI + Pydantic v2，uvicorn 由 <code>main.py</code> 在代码里启动</td></tr>
+    <tr><td>数据库</td><td>PostgreSQL + SQLAlchemy 2.0（async）+ psycopg 3；不用迁移工具，建表 SQL 在启动时执行</td></tr>
+    <tr><td>Redis / MinIO</td><td>redis-py（Stream + 消费组）；minio</td></tr>
+    <tr><td>沙箱</td><td>pebble 进程池（单任务超时可杀子进程）</td></tr>
+    <tr><td>测试</td><td>pytest + pytest-asyncio + httpx + fakeredis</td></tr>
+    <tr><td>前端</td><td>单独的仓库，不放在本仓库；页面规格见第 11 节</td></tr>
   </table></div>
+  <p><strong>运行：</strong>在根目录执行 <code>uv sync</code> 后 <code>uv run main.py</code>。一个进程同时提供 REST API 和后台计算（监听 Redis、补算重算、实时批次收尾、补做 SDK 调用），不需要 Dockerfile，也不需要单独的 worker 进程。启动时依次：读 <code>config/config.json</code> → 执行 <code>src/model/schema.sql</code>（全部 <code>IF NOT EXISTS</code>，重复执行无副作用）→ 启动后台任务 → 启动 uvicorn。多实例部署时直接多起几个，消费组和 <code>FOR UPDATE SKIP LOCKED</code> 保证不重复处理。</p>
 
   <h3>2. 代码仓目录</h3>
 <pre><code>ei-feature-service/
-├── pyproject.toml              <span class="c"># 依赖（== 固定版本）、ruff、pytest 配置，见下</span>
-├── uv.lock                     <span class="c"># uv lock 生成，提交到仓库</span>
-├── .python-version             <span class="c"># 3.12</span>
-├── .env.example                <span class="c"># 第 3 节的环境变量示例，python-dotenv 加载</span>
-├── Dockerfile                  <span class="c"># 基于 python:3.12-slim，uv sync --frozen --no-dev</span>
-├── docker-compose.yml          <span class="c"># postgres:16, redis:7, minio（本地开发和集成测试）</span>
-├── alembic.ini
-├── migrations/versions/0001_init.py   <span class="c"># 建表，内容见“结果 · 设计说明”里的 schema.sql</span>
-├── redesign.html               <span class="c"># 本设计文档</span>
+├── main.py                <span class="c"># 入口：读配置、建表、启动后台任务和 uvicorn</span>
+├── pyproject.toml
+├── uv.lock
+├── .python-version        <span class="c"># 3.12</span>
+├── redesign.html          <span class="c"># 本设计文档</span>
+├── config/
+│   └── config.json        <span class="c"># 唯一的配置文件（第 3 节）</span>
 ├── src/
-│   ├── ei_feature_service/
-│   │   ├── main.py             <span class="c"># create_app()：注册路由、异常处理、生命周期</span>
-│   │   ├── worker.py           <span class="c"># 启动 LiveConsumer + BatchRunner + LiveBatchCloser</span>
-│   │   ├── config.py           <span class="c"># Settings（见第 3 节）</span>
-│   │   ├── errors.py           <span class="c"># AppError(code, http_status, message, details) 与错误码</span>
-│   │   ├── auth.py             <span class="c"># 从 X-User 取当前用户</span>
-│   │   ├── db.py               <span class="c"># engine、session、事务工具</span>
-│   │   ├── models.py           <span class="c"># SQLAlchemy ORM，五张表</span>
-│   │   ├── schemas/            <span class="c"># Pydantic 请求 / 响应模型（第 5 节）</span>
-│   │   ├── api/                <span class="c"># features.py bindings.py schedules.py batches.py values.py</span>
-│   │   ├── services/           <span class="c"># 业务逻辑，一个领域一个文件，API 只调 service</span>
-│   │   ├── packaging/validate.py   <span class="c"># 特征包校验（第 7 节）</span>
-│   │   ├── clients/
-│   │   │   ├── gde.py          <span class="c"># GdeClient 协议 + SdkGdeClient + FakeGdeClient（第 8 节）</span>
-│   │   │   ├── store.py        <span class="c"># MinIO 读写特征包，本地缓存并校验 sha256</span>
-│   │   │   └── stream.py       <span class="c"># Redis Stream 读、确认、认领</span>
-│   │   └── engine/
-│   │       ├── sandbox.py      <span class="c"># 在子进程里执行 fetch + compute，返回 RunResult</span>
-│   │       ├── limits.py       <span class="c"># 全局 / 每腔室 / 补算信号量，熔断器</span>
-│   │       ├── live.py         <span class="c"># LiveConsumer：消费 gde:run:done</span>
-│   │       ├── batch.py        <span class="c"># BatchRunner：执行 fill / overwrite 批次</span>
-│   │       └── writer.py       <span class="c"># 写 feature_value，维护实时批次</span>
-│   └── eifeature/              <span class="c"># 特征包运行库：gde、ops、Skip（第 7 节）</span>
-├── tests/                      <span class="c"># unit/ 与 integration/</span>
-└── web/                        <span class="c"># 前端（第 11 节）</span></code></pre>
+│   ├── api/               <span class="c"># 路由：一个领域一个文件，只做参数解析和调用 service</span>
+│   │   ├── features.py  bindings.py  schedules.py  batches.py  values.py
+│   │   └── schemas.py     <span class="c"># 全部 Pydantic 请求 / 响应模型（第 5 节）</span>
+│   ├── service/           <span class="c"># 业务逻辑和事务</span>
+│   │   ├── feature.py     <span class="c"># 上传、评审、下线、试跑</span>
+│   │   ├── package.py     <span class="c"># 特征包校验（第 7 节）</span>
+│   │   ├── binding.py     <span class="c"># 提交、审核、撤回、导入导出、校验</span>
+│   │   ├── schedule.py    <span class="c"># 订阅状态、暂停恢复</span>
+│   │   ├── batch.py       <span class="c"># 创建、查询、取消批次</span>
+│   │   └── value.py       <span class="c"># 查询特征值</span>
+│   ├── engine/            <span class="c"># 后台计算；__init__.py 提供 start() / stop()</span>
+│   │   ├── sandbox.py     <span class="c"># 子进程里执行 fetch + compute，返回 RunResult</span>
+│   │   ├── live.py        <span class="c"># 监听 gde:run:done</span>
+│   │   ├── batch_runner.py <span class="c"># 执行补算 / 重算</span>
+│   │   ├── jobs.py        <span class="c"># 实时批次收尾、gde_outbox 重试（定时任务）</span>
+│   │   └── writer.py      <span class="c"># 写 feature_value、维护批次计数</span>
+│   ├── model/
+│   │   ├── tables.py      <span class="c"># SQLAlchemy ORM，六张表</span>
+│   │   └── schema.sql     <span class="c"># 建表与索引（全部 IF NOT EXISTS）</span>
+│   ├── eifeature/         <span class="c"># 特征包运行库：gde、ops、Series、Skip（第 7 节）</span>
+│   └── util/              <span class="c"># 与业务无关、可复用的部分</span>
+│       ├── config.py      <span class="c"># 读 config.json，以及第 3 节的代码常量</span>
+│       ├── db.py          <span class="c"># engine、session、事务、advisory lock</span>
+│       ├── errors.py      <span class="c"># AppError、错误码、FastAPI 异常处理</span>
+│       ├── auth.py        <span class="c"># 从 X-User 取当前用户</span>
+│       ├── gde.py         <span class="c"># GdeClient 协议、SdkGdeClient、FakeGdeClient（第 8 节）</span>
+│       ├── storage.py     <span class="c"># MinIO 读写特征包、本地缓存、sha256 校验</span>
+│       ├── stream.py      <span class="c"># Redis Stream 读取、确认、认领</span>
+│       ├── limits.py      <span class="c"># 信号量、熔断器</span>
+│       ├── semver.py      <span class="c"># 版本号解析与比较</span>
+│       └── timeutil.py    <span class="c"># 时区、整点、日期区间</span>
+└── test/
+    ├── conftest.py        <span class="c"># FakeGdeClient、fakeredis、测试库连接</span>
+    ├── unit/              <span class="c"># 不依赖外部服务</span>
+    └── integration/       <span class="c"># 需要 PostgreSQL，连接取 config.json 的 database.url</span></code></pre>
+  <p class="muted">导入统一写 <code>from src.util.config import settings</code> 这种形式；根目录即工作目录，pytest 设 <code>pythonpath = ["."]</code>。特征包里写的是 <code>from eifeature import …</code>，沙箱子进程启动时执行 <code>sys.modules["eifeature"] = src.eifeature</code> 让它可以导入。</p>
 
+  <div class="cols">
+  <div>
   <div class="file">pyproject.toml</div>
 <pre><code>[project]
 name = <span class="s">"ei-feature-service"</span>
 version = <span class="s">"0.1.0"</span>
 requires-python = <span class="s">"==3.12.*"</span>
 dependencies = [
-    <span class="s">"alembic==1.18.5"</span>,
     <span class="s">"fastapi==0.139.2"</span>,
     <span class="s">"uvicorn[standard]==0.51.0"</span>,
     <span class="s">"sqlalchemy==2.0.51"</span>,
-    <span class="s">"pydantic==2.13.4"</span>,
-    <span class="s">"pydantic-settings==2.14.2"</span>,
     <span class="s">"psycopg[binary]==3.3.4"</span>,
-    <span class="s">"python-multipart==0.0.32"</span>,   <span class="c"># 上传特征包</span>
-    <span class="s">"python-dotenv==1.2.2"</span>,
-    <span class="s">"anyio==4.16.0"</span>,              <span class="c"># to_thread 调同步的 GDE SDK</span>
+    <span class="s">"pydantic==2.13.4"</span>,
+    <span class="s">"python-multipart==0.0.32"</span>,
     <span class="s">"redis==7.1.0"</span>,
     <span class="s">"minio==7.2.20"</span>,
-    <span class="s">"pebble==5.2.3"</span>,              <span class="c"># 沙箱进程池</span>
+    <span class="s">"pebble==5.2.3"</span>,
     <span class="s">"numpy==2.5.5"</span>,
-    <span class="c"># GDE SDK：包名和版本待数据底座确认，确认后在这里加一行 == 固定版本</span>
+    <span class="c"># GDE SDK：确认包名后加一行 == 固定版本</span>
 ]
 
 [dependency-groups]
@@ -891,59 +895,82 @@ dev = [
     <span class="s">"pytest-asyncio==1.5.0"</span>,
     <span class="s">"httpx==0.28.1"</span>,
     <span class="s">"fakeredis==2.41.0"</span>,
-    <span class="s">"ruff==0.17.6"</span>,
 ]
 
-[build-system]
-requires = [<span class="s">"hatchling==1.33.0"</span>]
-build-backend = <span class="s">"hatchling.build"</span>
-
-[tool.hatch.build.targets.wheel]
-packages = [<span class="s">"src/ei_feature_service"</span>, <span class="s">"src/eifeature"</span>]
+[tool.uv]
+package = <span class="k">false</span>
 
 [tool.pytest.ini_options]
-asyncio_mode = <span class="s">"auto"</span>
-testpaths = [<span class="s">"tests"</span>]
+pythonpath = [<span class="s">"."</span>]
+testpaths = [<span class="s">"test"</span>]
+asyncio_mode = <span class="s">"auto"</span></code></pre>
+  </div>
+  <div>
+  <div class="file">main.py</div>
+<pre><code><span class="k">from</span> contextlib <span class="k">import</span> asynccontextmanager
+<span class="k">import</span> uvicorn
+<span class="k">from</span> fastapi <span class="k">import</span> FastAPI
+<span class="k">from</span> src.util.config <span class="k">import</span> settings
+<span class="k">from</span> src.util <span class="k">import</span> db, errors
+<span class="k">from</span> src.api <span class="k">import</span> features, bindings, schedules, batches, values
+<span class="k">from</span> src <span class="k">import</span> engine
 
-[tool.ruff]
-line-length = 120
-target-version = <span class="s">"py312"</span></code></pre>
-  <p class="muted">这组版本已用 <code>uv lock</code> 在 Python 3.12 下验证可以一起解析。新增依赖一律 <code>uv add "包名==版本"</code>，不写 <code>&gt;=</code>、<code>~=</code>。</p>
+@asynccontextmanager
+<span class="k">async def</span> lifespan(app):
+    <span class="k">await</span> db.init_schema()        <span class="c"># 执行 src/model/schema.sql</span>
+    tasks = engine.start()        <span class="c"># live、batch_runner、jobs</span>
+    <span class="k">yield</span>
+    <span class="k">await</span> engine.stop(tasks)
+
+app = FastAPI(title=<span class="s">"ei-feature-service"</span>, lifespan=lifespan)
+errors.install(app)
+<span class="k">for</span> m <span class="k">in</span> (features, bindings, schedules, batches, values):
+    app.include_router(m.router, prefix=<span class="s">"/api"</span>)
+
+<span class="k">if</span> __name__ == <span class="s">"__main__"</span>:
+    uvicorn.run(app, host=settings.server.host,
+                port=settings.server.port)</code></pre>
   <div class="file">常用命令</div>
-<pre><code>uv sync                                          <span class="c"># 安装依赖（含 dev 组）</span>
-docker compose up -d                             <span class="c"># 本地 postgres / redis / minio</span>
-uv run alembic upgrade head                      <span class="c"># 建表</span>
-uv run uvicorn ei_feature_service.main:app --reload --port 8000
-uv run python -m ei_feature_service.worker
-uv run pytest
-uv run ruff check . &amp;&amp; uv run ruff format --check .</code></pre>
+<pre><code>uv sync           <span class="c"># 安装依赖</span>
+uv run main.py    <span class="c"># 启动</span>
+uv run pytest     <span class="c"># 测试</span></code></pre>
+  </div>
+  </div>
 
-  <h3>3. 配置（环境变量）</h3>
-  <div class="table-wrap"><table>
-    <tr><th>变量</th><th>默认值</th><th>说明</th></tr>
-    <tr><td><code>EIF_DATABASE_URL</code></td><td>—</td><td><code>postgresql+psycopg://user:pwd@host:5432/db</code></td></tr>
-    <tr><td><code>EIF_REDIS_URL</code></td><td>—</td><td>GDE 提供的 Redis</td></tr>
-    <tr><td><code>EIF_RUN_DONE_STREAM</code></td><td><code>gde:run:done</code></td><td>执行结束通知的 Stream 键</td></tr>
-    <tr><td><code>EIF_CONSUMER_GROUP</code></td><td><code>ei-feature-service</code></td><td>消费组；消费者名取 <code>{hostname}-{pid}</code></td></tr>
-    <tr><td><code>EIF_MINIO_ENDPOINT</code> / <code>_ACCESS_KEY</code> / <code>_SECRET_KEY</code> / <code>_SECURE</code></td><td>— / — / — / false</td><td>MinIO 连接</td></tr>
-    <tr><td><code>EIF_MINIO_BUCKET</code></td><td><code>ei-feature-service</code></td><td>对象键 <code>features/{id}/{version}/feature.json</code>、<code>compute.py</code></td></tr>
-    <tr><td><code>EIF_GDE_SDK_*</code></td><td>—</td><td>GDE SDK 连接参数，原样透传给 SDK</td></tr>
-    <tr><td><code>EIF_GDE_FAKE</code></td><td>false</td><td>true 时用内存版 FakeGdeClient（本地开发、测试）</td></tr>
-    <tr><td><code>EIF_FETCH_CONCURRENCY</code></td><td>8</td><td>每个 worker 进程的取数并发上限</td></tr>
-    <tr><td><code>EIF_FETCH_PER_CHAMBER</code></td><td>2</td><td>每个腔室的取数并发上限</td></tr>
-    <tr><td><code>EIF_BATCH_CONCURRENCY</code></td><td>3</td><td>补算 / 重算最多占用的并发</td></tr>
-    <tr><td><code>EIF_FETCH_TIMEOUT_S</code> / <code>EIF_COMPUTE_TIMEOUT_S</code></td><td>30 / 10</td><td>超时</td></tr>
-    <tr><td><code>EIF_SANDBOX_PROCESSES</code></td><td>8</td><td>沙箱进程池大小</td></tr>
-    <tr><td><code>EIF_CLAIM_IDLE_S</code> / <code>EIF_MAX_DELIVERIES</code></td><td>300 / 3</td><td>未确认消息多久后认领；最多投递次数</td></tr>
-    <tr><td><code>EIF_BREAKER_FAILURES</code> / <code>EIF_BREAKER_PAUSE_S</code></td><td>5 / 60</td><td>连续 N 次 GDE 不可用后暂停取数的秒数</td></tr>
-    <tr><td><code>EIF_BATCH_MAX_DAYS</code></td><td>31</td><td>补算 / 重算单次最大天数</td></tr>
-    <tr><td><code>EIF_TRIAL_CONCURRENCY</code></td><td>2</td><td>每个 api 进程同时进行的试跑数</td></tr>
-    <tr><td><code>EIF_TZ</code></td><td><code>Asia/Shanghai</code></td><td>补算日期、实时批次整点的时区</td></tr>
+  <h3>3. 配置</h3>
+  <p>只有一个文件 <code>config/config.json</code>，不用环境变量和 .env。只放每个环境必须不同的连接信息：</p>
+<div class="file">config/config.json</div>
+<pre><code>{
+  <span class="k">"server"</span>:   { <span class="k">"host"</span>: <span class="s">"0.0.0.0"</span>, <span class="k">"port"</span>: 8000 },
+  <span class="k">"database"</span>: { <span class="k">"url"</span>: <span class="s">"postgresql+psycopg://user:pwd@127.0.0.1:5432/ei_feature"</span> },
+  <span class="k">"redis"</span>:    { <span class="k">"url"</span>: <span class="s">"redis://127.0.0.1:6379/0"</span> },
+  <span class="k">"minio"</span>:    { <span class="k">"endpoint"</span>: <span class="s">"127.0.0.1:9000"</span>, <span class="k">"access_key"</span>: <span class="s">"…"</span>, <span class="k">"secret_key"</span>: <span class="s">"…"</span>,
+                <span class="k">"secure"</span>: <span class="k">false</span>, <span class="k">"bucket"</span>: <span class="s">"ei-feature-service"</span> },
+  <span class="k">"gde"</span>:      { <span class="k">"fake"</span>: <span class="k">false</span>, <span class="k">"sdk"</span>: {} }
+}</code></pre>
+  <ul>
+    <li><code>src/util/config.py</code> 用 Pydantic 模型读取并校验这个文件，模块级单例 <code>settings</code>；缺字段或类型错误时启动直接报错退出。</li>
+    <li><code>gde.fake=true</code> 时用内存版 <code>FakeGdeClient</code>（本地开发、测试）；<code>gde.sdk</code> 原样传给 GDE SDK 的初始化函数。</li>
+    <li><code>server</code> 可省略，默认 <code>0.0.0.0:8000</code>。</li>
+  </ul>
+  <p>其余参数都是 <code>src/util/config.py</code> 里的常量，不放进配置文件：</p>
+  <div class="table-wrap"><table class="nowrap-first">
+    <tr><th>常量</th><th>值</th><th>说明</th></tr>
+    <tr><td><code>RUN_DONE_STREAM</code> / <code>CONSUMER_GROUP</code></td><td><code>gde:run:done</code> / <code>ei-feature-service</code></td><td>消费者名取 <code>{hostname}-{pid}</code></td></tr>
+    <tr><td><code>FETCH_CONCURRENCY</code> / <code>FETCH_PER_CHAMBER</code> / <code>BATCH_CONCURRENCY</code></td><td>8 / 2 / 3</td><td>每个实例的取数并发；每腔室上限；补算最多占用</td></tr>
+    <tr><td><code>TRIAL_CONCURRENCY</code></td><td>2</td><td>同时进行的试跑数</td></tr>
+    <tr><td><code>FETCH_TIMEOUT_S</code> / <code>COMPUTE_TIMEOUT_S</code></td><td>30 / 10</td><td>超时</td></tr>
+    <tr><td><code>SANDBOX_PROCESSES</code></td><td>8</td><td>沙箱进程池大小</td></tr>
+    <tr><td><code>CLAIM_IDLE_S</code> / <code>MAX_DELIVERIES</code></td><td>300 / 3</td><td>未确认消息多久后认领；最多投递次数</td></tr>
+    <tr><td><code>BREAKER_FAILURES</code> / <code>BREAKER_PAUSE_S</code></td><td>5 / 60</td><td>连续 N 次 GDE 不可用后暂停取数的秒数</td></tr>
+    <tr><td><code>BATCH_MAX_DAYS</code></td><td>31</td><td>补算 / 重算单次最大天数</td></tr>
+    <tr><td><code>TZ</code></td><td><code>Asia/Shanghai</code></td><td>日期参数、实时批次整点的时区</td></tr>
+    <tr><td><code>PACKAGE_CACHE_DIR</code></td><td><code>/tmp/ei-feature/pkgs</code></td><td>特征包本地缓存</td></tr>
   </table></div>
 
   <h3>4. 接口通用约定</h3>
   <ul>
-    <li>前缀 <code>/api</code>，请求、响应都是 JSON（上传特征包除外）。时间一律 ISO 8601 带时区；日期参数为 <code>YYYY-MM-DD</code>，按 <code>EIF_TZ</code> 解释，<code>to</code> 包含当天。</li>
+    <li>前缀 <code>/api</code>，请求、响应都是 JSON（上传特征包除外）。时间一律 ISO 8601 带时区；日期参数为 <code>YYYY-MM-DD</code>，按 <code>TZ</code> 解释，<code>to</code> 包含当天。</li>
     <li><strong>用户：</strong>网关注入请求头 <code>X-User</code>（工号）。所有写接口必需，缺失返回 401。保留用户名 <code>system</code> 只能由服务自己使用。</li>
     <li><strong>列表：</strong>参数 <code>page</code>（从 1 开始）、<code>page_size</code>（默认 20，最大 200；<code>/api/values</code> 最大 1000），响应 <code>{"items": [...], "total": 123, "page": 1, "page_size": 20}</code>。</li>
     <li><strong>错误：</strong>响应体 <code>{"code": "BINDING_INVALID", "message": "人能看懂的说明", "details": {...}}</code>。</li>
@@ -1029,7 +1056,7 @@ uv run ruff check . &amp;&amp; uv run ruff format --check .</code></pre>
     <tr><td><span class="method m-post">POST</span> <code>/api/chamber-bindings/import</code></td><td><code>dry_run</code>（默认 true）；body 为导出格式</td><td><code>{"items": [{"tool","chamber","action": "new"|"skip"|"conflict"|"error","message","revision"?, "errors"?}]}</code>。每个腔室独立按“绑定校验”判断：有待审核 → conflict；与生效修订一致 → skip；文件内同一腔室重复 → error。<code>dry_run=false</code> 时在一个事务里为所有 new 插入 pending 修订（source=import，base_revision=当前生效修订号）；有 error 时也只导入 new 的部分。</td></tr>
     <tr><td><span class="method m-get">GET</span> <code>/api/schedules</code></td><td><code>tool?</code> <code>chamber?</code></td><td><code>[{"tool","chamber","gde_sub_id","binding_revision","feature_count","status": "running"|"paused"|"cancelled"|"unknown","progress": datetime?}]</code>。status 经 SDK 查询（失败时为 unknown，不报错）；progress = 该腔室最近一个 live 批次中最大的 run_end_at。</td></tr>
     <tr><td><span class="method m-post">POST</span> <code>/api/schedules/{chamber}/pause</code>、<code>/resume</code></td><td>—</td><td>调 SDK 暂停 / 恢复生效修订上的 gde_sub_id。无订阅 → 409 <code>INVALID_STATE</code>。</td></tr>
-    <tr><td><span class="method m-post">POST</span> <code>/api/batches</code></td><td><code>{"chamber", "mode": "fill"|"overwrite", "features": [str], "from": date, "to": date, "reason": str}</code></td><td>201 <code>Batch</code>（queued）。features 必须都在该腔室生效修订中；from ≤ to ≤ 今天；天数 ≤ <code>EIF_BATCH_MAX_DAYS</code>；reason 必填。binding_revision 取当前生效修订。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>/api/batches</code></td><td><code>{"chamber", "mode": "fill"|"overwrite", "features": [str], "from": date, "to": date, "reason": str}</code></td><td>201 <code>Batch</code>（queued）。features 必须都在该腔室生效修订中；from ≤ to ≤ 今天；天数 ≤ <code>BATCH_MAX_DAYS</code>；reason 必填。binding_revision 取当前生效修订。</td></tr>
     <tr><td><span class="method m-get">GET</span> <code>/api/batches</code>、<code>/api/batches/{id}</code></td><td><code>chamber?</code> <code>mode?</code> <code>status?</code></td><td>列表按 batch_id 降序 / 单个 <code>Batch</code>。</td></tr>
     <tr><td><span class="method m-post">POST</span> <code>/api/batches/{id}/cancel</code></td><td>—</td><td>仅 queued / running 的 fill、overwrite → cancelled；BatchRunner 在处理下一个 run_id 前检查状态并停止，已写入的值保留。</td></tr>
     <tr><td><span class="method m-get">GET</span> <code>/api/values</code></td><td><code>feature</code>（必填，id@version）<code>tool?</code> <code>chamber?</code> <code>recipe?</code> <code>wafer?</code> <code>lot?</code> <code>from?</code> <code>to?</code> <code>only_null?</code></td><td>列表 <code>Value</code>，按 run_end_at 升序。</td></tr>
@@ -1080,11 +1107,11 @@ active  --新修订生效----------------&gt; superseded
   <ol>
     <li>feature.status=retired，写 retired_by/at、retire_reason。</li>
     <li>用 binding_item 找出 active 修订中含该 (id, version) 的腔室。对每个腔室：从 spec 删掉该特征，删除变空的规则；把该腔室的 pending 修订置为 withdrawn，review_note=“特征 {ref} 下线，自动撤回”；插入新修订（source=system，status=active，created_by=system，reviewed_by=system）；旧 active → superseded。</li>
-    <li>新修订没有规则时：调用 SDK <code>cancel_subscription</code>，新修订的 gde_sub_id 置空；配方集合变了则 <code>update_subscription</code>。SDK 调用放在事务提交后执行，失败写入 <code>outbox</code> 日志并由 worker 每分钟重试（实现为一张简单的表 <code>gde_outbox(id, action, payload jsonb, attempts, last_error, created_at, done_at)</code>）。</li>
+    <li>新修订没有规则时：调用 SDK <code>cancel_subscription</code>，新修订的 gde_sub_id 置空；配方集合变了则 <code>update_subscription</code>。SDK 调用放在事务提交后执行，失败写入 <code>gde_outbox</code> 表，由后台任务 <code>src/engine/jobs.py</code> 每分钟重试（实现为一张简单的表 <code>gde_outbox(id, action, payload jsonb, attempts, last_error, created_at, done_at)</code>）。</li>
   </ol>
 
   <h3>7. 特征包与运行库 eifeature</h3>
-  <p><strong>上传校验</strong>（<code>packaging/validate.py</code>，全部错误一次返回）：</p>
+  <p><strong>上传校验</strong>（<code>src/service/package.py</code>，全部错误一次返回）：</p>
   <ul>
     <li>feature.json：合法 JSON；<code>id</code> 匹配 <code>^[a-z][a-z0-9_]{2,63}$</code>；<code>version</code> 匹配 <code>^\d+\.\d+\.\d+$</code>；<code>desc</code> 1~200 字；<code>output.unit</code> 字符串，最长 32。其他键原样保存。</li>
     <li>(id, version) 不存在；version 大于该 id 已有的最大版本。</li>
@@ -1092,7 +1119,7 @@ active  --新修订生效----------------&gt; superseded
     <li>import 白名单：<code>eifeature</code>、<code>math</code>、<code>statistics</code>、<code>numpy</code>、<code>typing</code>、<code>dataclasses</code>、<code>functools</code>、<code>itertools</code>、<code>collections</code>。禁止名称：<code>open</code> <code>exec</code> <code>eval</code> <code>compile</code> <code>__import__</code> <code>globals</code> <code>locals</code> <code>input</code> <code>breakpoint</code>，以及任何以双下划线开头的属性访问。</li>
     <li>package_hash = sha256(feature.json 字节 + b"\n" + compute.py 字节)。</li>
   </ul>
-<div class="file">src/eifeature/__init__.py 对外接口</div>
+<div class="file">src/eifeature 对外接口</div>
 <pre><code><span class="k">class</span> Skip(Exception):
     <span class="k">def</span> __init__(self, reason: str): ...   <span class="c"># reason 匹配 ^[A-Z][A-Z0-9_]{2,31}$，否则视为 COMPUTE_ERROR</span>
 
@@ -1122,7 +1149,7 @@ active  --新修订生效----------------&gt; superseded
   <p class="muted">fetch 返回的 dict 在同一子进程里直接传给 compute，不做序列化。compute 必须返回有限的 float（int 转成 float），否则记 <code>COMPUTE_ERROR</code>。</p>
 
   <h3>8. GDE SDK 适配层</h3>
-  <p class="muted">GDE SDK 的真实函数名待与数据底座确认。服务内部只依赖下面这个协议，<code>SdkGdeClient</code> 负责把它映射到真实 SDK，<code>FakeGdeClient</code> 用内存数据实现，供测试和本地开发使用（<code>EIF_GDE_FAKE=true</code> 时启用）。</p>
+  <p class="muted">GDE SDK 的真实函数名待与数据底座确认。服务内部只依赖下面这个协议，<code>SdkGdeClient</code> 负责把它映射到真实 SDK，<code>FakeGdeClient</code> 用内存数据实现，供测试和本地开发使用（<code>config.json</code> 中 <code>gde.fake=true</code> 时启用）。</p>
 <pre><code><span class="k">class</span> GdeClient(Protocol):
     <span class="c"># 元数据（只用于后端校验；前端直接调 GDE 元数据服务）</span>
     <span class="k">def</span> chamber_tool(self, chamber: str) -&gt; str | None
@@ -1140,7 +1167,7 @@ active  --新修订生效----------------&gt; superseded
     <span class="k">def</span> trace(self, run_id: str, signal: str, unit: str | None, timeout_s: float) -&gt; Series
 
 <span class="c"># 所有方法失败时抛 GdeUnavailable（网络、5xx、超时）或 GdeNotFound（run / 信号不存在）。</span>
-<span class="c"># SDK 是同步库：在 API / worker 的 async 代码中通过 anyio.to_thread.run_sync 调用。</span></code></pre>
+<span class="c"># SDK 是同步库：在 async 代码中通过 asyncio.to_thread 调用。</span></code></pre>
 
   <h3>9. 计算引擎</h3>
 <div class="file">RunResult（沙箱返回）与原因码映射</div>
@@ -1156,7 +1183,7 @@ compute 抛 Skip(r)            -&gt; reason = r
 compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_detail 同上
 子进程被杀（总超时）          -&gt; reason = "FETCH_TIMEOUT" 或 "COMPUTE_ERROR"（看卡在哪一步）</code></pre>
 
-<div class="file">engine/live.py · LiveConsumer（每个 worker 进程一个）</div>
+<div class="file">src/engine/live.py · LiveConsumer（每个实例一个）</div>
 <pre><code>启动：XGROUP CREATE {stream} {group} $ MKSTREAM（已存在忽略 BUSYGROUP）
 循环：
   msgs = XREADGROUP GROUP {group} {consumer} COUNT 32 BLOCK 5000 STREAMS {stream} &gt;
@@ -1177,13 +1204,13 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
   投递次数（XPENDING 中的 times_delivered）&gt; MAX_DELIVERIES 的消息：
     对未写结果的特征写 reason="FETCH_ERROR"、reason_detail="max deliveries exceeded"，然后 XACK</code></pre>
   <ul>
-    <li><strong>实时批次：</strong>键 (chamber, binding_revision, data_from=整点)。用唯一部分索引 <code>ON feature_batch (chamber, binding_revision, data_from) WHERE mode='live'</code> 配合 <code>INSERT … ON CONFLICT DO NOTHING</code> 再查询来取或建；created_by=system，status=running，data_to=data_from+1h。<code>LiveBatchCloser</code> 每 5 分钟把 data_to 早于 now()−10 分钟的 running 实时批次置为 done、写 finished_at。</li>
+    <li><strong>实时批次：</strong>键 (chamber, binding_revision, data_from=整点)。用唯一部分索引 <code>ON feature_batch (chamber, binding_revision, data_from) WHERE mode='live'</code> 配合 <code>INSERT … ON CONFLICT DO NOTHING</code> 再查询来取或建；created_by=system，status=running，data_to=data_from+1h。<code>src/engine/jobs.py</code> 每 5 分钟把 data_to 早于 now()−10 分钟的 running 实时批次置为 done、写 finished_at。</li>
     <li><strong>计数：</strong>写入一个值后 <code>UPDATE feature_batch SET value_ok = value_ok + 1</code>（或 value_null）；run_total 在一条消息的所有特征处理完后 +1。</li>
     <li><strong>熔断：</strong>连续 <code>BREAKER_FAILURES</code> 次 GdeUnavailable 后，<code>BREAKER_PAUSE_S</code> 秒内所有取数直接视为 GdeUnavailable；任何一次成功清零。</li>
-    <li><strong>特征包加载：</strong>按 (id, version) 从 MinIO 下载到 <code>/tmp/ei-feature/pkgs/{id}/{version}/</code>，校验 package_hash 后缓存；子进程用 <code>importlib</code> 以唯一模块名加载 compute.py，并按 (id, version) 缓存模块对象。</li>
+    <li><strong>特征包加载：</strong>按 (id, version) 从 MinIO 下载到 <code>{PACKAGE_CACHE_DIR}/{id}/{version}/</code>，校验 package_hash 后缓存；子进程用 <code>importlib</code> 以唯一模块名加载 compute.py，并按 (id, version) 缓存模块对象。</li>
   </ul>
 
-<div class="file">engine/batch.py · BatchRunner（每个 worker 进程一个，取补算 / 重算任务）</div>
+<div class="file">src/engine/batch_runner.py · BatchRunner（每个实例一个，取补算 / 重算任务）</div>
 <pre><code>循环（每 5 秒）：
   b = SELECT … FROM feature_batch WHERE status='queued' ORDER BY batch_id
       LIMIT 1 FOR UPDATE SKIP LOCKED
@@ -1201,10 +1228,10 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
           overwrite：同一事务内 DELETE (f, run_id) 再 INSERT，batch_id=b.batch_id
   overwrite 完成后：把同腔室、时间重叠、特征有交集、未被覆盖的旧批次 superseded_by=b.batch_id
   b.status='done', finished_at=now(), run_total=len(runs)</code></pre>
-  <p class="muted">试跑在 api 进程内执行：同一个 <code>sandbox.run</code>，受 <code>EIF_TRIAL_CONCURRENCY</code> 信号量限制，超时与原因码规则相同，结果直接返回不写库。</p>
+  <p class="muted">试跑在处理请求的同一进程内执行：同一个 <code>sandbox.run</code>，受 <code>TRIAL_CONCURRENCY</code> 信号量限制，超时与原因码规则相同，结果直接返回不写库。</p>
 
   <h3>10. 数据库补充</h3>
-  <p class="muted">以“结果 · 设计说明”中的 schema.sql 为准，另加：</p>
+  <p class="muted"><code>src/model/schema.sql</code> = “结果 · 设计说明”中的 schema.sql + 下面这些，所有 <code>CREATE TABLE</code> / <code>CREATE INDEX</code> 都写成 <code>IF NOT EXISTS</code>。以后加字段也追加到这个文件，用 <code>ALTER TABLE … ADD COLUMN IF NOT EXISTS</code>。</p>
 <pre><code><span class="k">CREATE UNIQUE INDEX</span> feature_batch_live_uq <span class="k">ON</span> feature_batch (chamber, binding_revision, data_from)
   <span class="k">WHERE</span> mode = <span class="s">'live'</span>;
 <span class="k">CREATE INDEX</span> feature_batch_queue <span class="k">ON</span> feature_batch (status, batch_id) <span class="k">WHERE</span> status <span class="k">IN</span> (<span class="s">'queued'</span>, <span class="s">'running'</span>);
@@ -1219,7 +1246,7 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
   done_at    <span class="k">TIMESTAMPTZ</span>
 );</code></pre>
 
-  <h3>11. 前端（web/）</h3>
+  <h3>11. 前端（单独仓库）</h3>
   <div class="table-wrap"><table class="nowrap-first">
     <tr><th>路由</th><th>页面内容</th><th>调用</th></tr>
     <tr><td><code>/features</code></td><td>筛选栏（状态、关键字）+ 表格（特征、版本、说明、状态、提交人、评审人、操作）。操作：试跑（非 retired）、提交评审（draft 本人）、评审（review）、下线（published）。上传对话框选两个文件。评审对话框：描述、代码（只读高亮）、试跑框、评审清单 5 项（全部勾选才能通过）、意见。</td><td>features 全部接口</td></tr>
@@ -1228,8 +1255,8 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
     <tr><td><code>/results</code></td><td>筛选栏（机台、腔室、特征、7 / 30 天）+ 折线图（ECharts；正常值、重算后的值、空值三种点）+ 点击点显示来源 + 空值原因统计。</td><td>values、batches/{id}</td></tr>
   </table></div>
   <ul>
-    <li>环境变量：<code>VITE_API_BASE</code>（本服务）、<code>VITE_GDE_META_BASE</code>（GDE 元数据服务）。所有请求带 <code>X-Client: console</code>；<code>X-User</code> 由网关注入。</li>
-    <li>GDE 元数据服务接口（待与数据底座确认，前端封装在 <code>web/src/api/gdeMeta.ts</code> 一处）：<code>GET /tools</code> → <code>[{tool}]</code>；<code>GET /tools/{tool}/chambers</code> → <code>[{chamber}]</code>；<code>GET /chambers/{chamber}/recipes</code> → <code>[{recipe}]</code>。</li>
+    <li>需要配置两个地址：本服务、GDE 元数据服务。所有请求带 <code>X-Client: console</code>；<code>X-User</code> 由网关注入。</li>
+    <li>GDE 元数据服务接口（待与数据底座确认，前端封装在一个文件里）：<code>GET /tools</code> → <code>[{tool}]</code>；<code>GET /tools/{tool}/chambers</code> → <code>[{chamber}]</code>；<code>GET /chambers/{chamber}/recipes</code> → <code>[{recipe}]</code>。</li>
     <li>错误统一用 Element Plus 消息提示 <code>message</code>；<code>BINDING_INVALID</code>、<code>PACKAGE_INVALID</code> 的 <code>details.errors</code> 逐条显示在对应位置。</li>
   </ul>
 
@@ -1242,9 +1269,9 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
     <tr><td>状态机</td><td>第 6 节每条转移的允许 / 拒绝，包括本人评审 403、本人审核 403、他人撤回 403。</td></tr>
     <tr><td>绑定</td><td>校验各条；approve 时 SDK 调用顺序（subscribe / update / 不调用）；SDK 失败不改库；导入的 new / skip / conflict / error。</td></tr>
     <tr><td>下线</td><td>移除特征、删空规则、撤回 pending、取消订阅写 outbox。</td></tr>
-    <tr><td>LiveConsumer</td><td>（集成，真 Redis + FakeGdeClient）同一消息投递两次只写一次；GdeUnavailable 不 ACK、认领后重试成功；超过投递上限写 FETCH_ERROR；配方不在绑定内直接 ACK；实时批次按整点归并。</td></tr>
-    <tr><td>BatchRunner</td><td>fill 跳过已有值；overwrite 覆盖并标记旧批次 superseded_by；cancel 生效；两个 worker 不会领同一个批次。</td></tr>
-    <tr><td>端到端</td><td>docker-compose 起依赖 + FakeGdeClient：上传 → 试跑 → 提交 → 他人评审 → 绑定 → 他人审核 → 向 Stream 写一条通知 → 在 <code>/api/values</code> 查到值，且能追溯到批次和特征包 hash。</td></tr>
+    <tr><td>LiveConsumer</td><td>（fakeredis + FakeGdeClient）同一消息投递两次只写一次；GdeUnavailable 不 ACK、认领后重试成功；超过投递上限写 FETCH_ERROR；配方不在绑定内直接 ACK；实时批次按整点归并。</td></tr>
+    <tr><td>BatchRunner</td><td>fill 跳过已有值；overwrite 覆盖并标记旧批次 superseded_by；cancel 生效；两个实例不会领同一个批次。</td></tr>
+    <tr><td>端到端</td><td>真实 PostgreSQL + fakeredis + FakeGdeClient：上传 → 试跑 → 提交 → 他人评审 → 绑定 → 他人审核 → 向 Stream 写一条通知 → 在 <code>/api/values</code> 查到值，且能追溯到批次和特征包 hash。</td></tr>
   </table></div>
 </section>
 
@@ -1656,10 +1683,10 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   </div>
   <div>
   <ul>
-    <li><strong>用 Stream + 消费组：</strong>worker 以消费组 <code>ei-feature-service</code> 读取（<code>XREADGROUP</code>），结果写入 PostgreSQL 后再 <code>XACK</code>；worker 重启不丢消息，多个 worker 自动分摊。</li>
-    <li><strong>未确认消息：</strong>超过 5 分钟未 ack 的消息由其他 worker 认领重试（<code>XAUTOCLAIM</code>），重试 3 次仍失败记 <code>FETCH_ERROR</code> 并 ack。</li>
+    <li><strong>用 Stream + 消费组：</strong>服务以消费组 <code>ei-feature-service</code> 读取（<code>XREADGROUP</code>），结果写入 PostgreSQL 后再 <code>XACK</code>；服务重启不丢消息，多个实例自动分摊。</li>
+    <li><strong>未确认消息：</strong>超过 5 分钟未 ack 的消息由其他实例认领重试（<code>XAUTOCLAIM</code>），重试 3 次仍失败记 <code>FETCH_ERROR</code> 并 ack。</li>
     <li><strong>去重：</strong>按“run_id + 特征 + 版本”去重，重复通知直接跳过。</li>
-    <li><strong>需要和 GDE 确认：</strong>如果 GDE 只能用 Pub/Sub，worker 停机期间的通知会丢，需要恢复后按时间段补算。</li>
+    <li><strong>需要和 GDE 确认：</strong>如果 GDE 只能用 Pub/Sub，服务停机期间的通知会丢，需要恢复后按时间段补算。</li>
   </ul>
   </div>
   </div>
@@ -1670,7 +1697,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   <div class="table-wrap">
   <table>
   <tr><th>手段</th><th>做法</th><th>默认值（示例）</th></tr>
-  <tr><td>全局并发上限</td><td>worker 内所有 fetch 共享一个信号量，超过上限排队</td><td>8</td></tr>
+  <tr><td>全局并发上限</td><td>实例内所有 fetch 共享一个信号量，超过上限排队</td><td>8</td></tr>
   <tr><td>每腔室上限</td><td>避免一个腔室的大量积压占满全部并发</td><td>2</td></tr>
   <tr><td>同一 run_id 共享（二期）</td><td>同一执行的多个特征取同一信号时只查一次；一期不做，每个特征独立取数</td><td>—</td></tr>
   <tr><td>补算限速</td><td>补算、重算、试跑走单独队列，只能使用部分并发，实时计算优先</td><td>最多 3</td></tr>
@@ -2930,7 +2957,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
     return [
       { key: 'app', title: '应用', sub: 'ei-feature-service', items: [
         T('定接口', 'REST API（特征、试跑、腔室绑定、规则导入导出、调度、批次、结果）及请求 / 响应模型；与数据底座确认 Redis 通知消息格式和 SDK 接口'),
-        T('整体框架设计', '服务分层（api / services / engine / clients / repos）、api 与 worker 两个进程、特征包运行沙箱、部署方式'),
+        T('整体框架设计', 'main.py + src（api / service / engine / model / eifeature / util）、config/config.json、单进程同时跑 API 和后台计算、特征包运行沙箱'),
         T('数据库表设计', 'feature、chamber_binding、binding_item、feature_batch、feature_value 五张表，索引与迁移脚本'),
         T('每个模块详细开发', '', [
           T('特征管理', '上传、自动检查、试跑、评审发布、下线'),
