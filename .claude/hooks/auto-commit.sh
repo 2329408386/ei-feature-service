@@ -9,7 +9,7 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
-files=$(git diff --cached --name-only | head -5 | paste -sd ', ' -)
+files=$(git diff --cached --name-only | head -5 | paste -sd ',' - | sed 's/,/, /g')
 count=$(git diff --cached --name-only | wc -l | tr -d ' ')
 [ "$count" -gt 5 ] && files="$files 等 $count 个文件"
 
