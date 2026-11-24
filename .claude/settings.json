@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/auto-commit.sh\"",
+            "timeout": 90,
+            "statusMessage": "自动提交并推送…"
+          }
+        ]
+      }
+    ]
+  }
+}
