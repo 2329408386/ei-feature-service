@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
-"""沙箱：在独立子进程里执行特征包的 fetch(run_id) 和 compute(data)。
+"""沙箱：在独立子进程里执行算子代码的 fetch(run_id) 和 compute(data)。
 
 - 每个阶段用 SIGALRM 计时，超时记 FETCH_TIMEOUT / COMPUTE_ERROR；
 - 子进程卡死时由 pebble 的总超时强制杀掉；
@@ -25,9 +25,30 @@ from pebble import ProcessExpired, ProcessPool
 
 from src.util.config import COMPUTE_TIMEOUT_S, FETCH_TIMEOUT_S, SANDBOX_PROCESSES, settings
 from src.util.gde import GdeNotFound, GdeUnavailable, make_gde
-from src.util.storage import CODE_FILE, local_package
+from src.util.storage import local_operator
 
 DETAIL_MAX = 1024  # reason_detail 最长 1 KB
+
+
+@dataclass(frozen=True)
+class OperatorRef:
+    """执行一个算子版本需要的信息。"""
+
+    feature_id: str
+    operator: str
+    version: int
+    code_hash: str
+    code_file: str
+
+    @property
+    def ref(self) -> str:
+        """形如 feature_id/operator@version。"""
+        return f"{self.feature_id}/{self.operator}@{self.version}"
+
+    @classmethod
+    def of(cls, row) -> "OperatorRef":
+        """由 ORM 的 Operator 行构造。"""
+        return cls(row.feature_id, row.name, row.version, row.code_hash, row.code_file)
 
 
 @dataclass
@@ -69,13 +90,13 @@ def _child_gde(gde_json: str):
 _modules: dict[str, object] = {}
 
 
-def _load(pkg_dir: str, key: str):
-    """按 (id, version, hash) 加载一次 compute.py 并缓存。"""
+def _load(code_path: str, key: str):
+    """按 (算子, 版本, hash) 加载一次代码文件并缓存。"""
     if key not in _modules:
         import src.eifeature
 
-        sys.modules.setdefault("eifeature", src.eifeature)  # 特征包写的是 from eifeature import ...
-        spec = importlib.util.spec_from_file_location(key, f"{pkg_dir}/{CODE_FILE}")
+        sys.modules.setdefault("eifeature", src.eifeature)  # 算子代码写的是 from eifeature import ...
+        spec = importlib.util.spec_from_file_location(key, code_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         _modules[key] = module
@@ -151,11 +172,11 @@ def _compute(r: RunResult, module, data, seconds: float) -> None:
     r.compute_ms = int((time.perf_counter() - t0) * 1000)
 
 
-def _execute(pkg_dir: str, key: str, run_id: str, gde_json: str, timeouts: tuple[float, float]) -> dict:
+def _execute(code_path: str, key: str, run_id: str, gde_json: str, timeouts: tuple[float, float]) -> dict:
     """子进程入口：返回 RunResult 的字段；GDE 不可用时返回 {"unavailable": 说明}。timeouts 为 (fetch 秒, compute 秒)。"""
     fetch_s, compute_s = timeouts
     r = RunResult()
-    module = _load(pkg_dir, key)
+    module = _load(code_path, key)
     try:
         data = _fetch(r, module, run_id, gde_json, fetch_s)
     except GdeUnavailable as e:
@@ -174,13 +195,14 @@ class Sandbox:
         self.pool = ProcessPool(max_workers=processes, max_tasks=500, context=multiprocessing.get_context("spawn"))
         self.gde_json = settings.gde.model_dump_json()
 
-    async def run(self, feature_id: str, version: str, package_hash: str, run_id: str) -> RunResult:
+    async def run(self, op: OperatorRef, run_id: str) -> RunResult:
         """执行一次 fetch + compute。GDE 不可用时抛 GdeUnavailable，其他问题都体现在 reason 上。"""
-        pkg_dir = await asyncio.to_thread(local_package, feature_id, version, package_hash)
-        key = f"eif_pkg_{feature_id}_{version.replace('.', '_')}_{package_hash[:12]}"
+        path = await asyncio.to_thread(
+            local_operator, op.feature_id, op.operator, op.version, op.code_file, op.code_hash)
+        key = f"eif_op_{op.feature_id}_{op.operator}_v{op.version}_{op.code_hash[:12]}"
         future = self.pool.schedule(
             _execute,
-            args=(str(pkg_dir), key, run_id, self.gde_json, (FETCH_TIMEOUT_S, COMPUTE_TIMEOUT_S)),
+            args=(str(path), key, run_id, self.gde_json, (FETCH_TIMEOUT_S, COMPUTE_TIMEOUT_S)),
             timeout=FETCH_TIMEOUT_S + COMPUTE_TIMEOUT_S + 10,
         )
         try:

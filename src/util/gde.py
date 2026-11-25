@@ -57,15 +57,24 @@ class Run:
 SubStatus = Literal["running", "paused", "cancelled"]
 
 
+ToolChamber = tuple[str, str]  # (机台, 腔室)
+
+
 class GdeClient(Protocol):
-    """GDE 客户端协议。元数据方法只用于后端校验，前端直接调 GDE 元数据服务。"""
+    """GDE 客户端协议。元数据方法供绑定页面（经 /api/gde 转发）和绑定校验使用。"""
 
     # ---- 元数据
-    def chamber_tool(self, chamber: str) -> str | None:
-        """腔室所属机台；腔室不存在返回 None。"""
+    def list_fleets(self) -> list[str]:
+        """全部 fleet。"""
 
-    def chamber_recipes(self, chamber: str) -> list[str]:
-        """腔室可用的 recipe 列表；腔室不存在抛 GdeNotFound。"""
+    def fleet_chambers(self, fleet: str, start: datetime, end: datetime) -> list[ToolChamber]:
+        """fleet 下在 [start, end) 内有执行的机台、腔室；fleet 不存在抛 GdeNotFound。"""
+
+    def list_recipes(self) -> list[str]:
+        """全部 recipe。"""
+
+    def recipe_chambers(self, recipe: str) -> list[ToolChamber]:
+        """跑过该 recipe 的全部机台、腔室；recipe 不存在抛 GdeNotFound。"""
 
     # ---- 订阅
     def subscribe(self, tool: str, chamber: str, recipes: list[str]) -> str:
@@ -121,6 +130,7 @@ FAKE_TOOLS = {
     "ETCH-01": {"CH-A01": ["RCP-0432", "RCP-0433", "RCP-0500"], "CH-A02": ["RCP-0432", "RCP-0433"]},
     "ETCH-02": {"CH-B02": ["RCP-1107", "RCP-1108"]},
 }
+FAKE_FLEETS = {"FLEET-ETCH-A": ["ETCH-01"], "FLEET-ETCH-B": ["ETCH-02"]}
 FAKE_STEPS = [Step(210, 0, 30), Step(212, 30, 60), Step(220, 60, 75)]
 _RUN_ID = re.compile(r"^RUN-(CH-[A-Z0-9]+)-(\d{12})$")  # list_runs 生成的 run_id：RUN-{腔室}-{yyyymmddHHMM}
 
@@ -161,15 +171,26 @@ class FakeGdeClient:
         self._lock = threading.Lock()
 
     # ---- 元数据
-    def chamber_tool(self, chamber):
-        """见 GdeClient.chamber_tool。"""
-        return self.chambers[chamber][0] if chamber in self.chambers else None
+    def list_fleets(self):
+        """见 GdeClient.list_fleets。"""
+        return sorted(FAKE_FLEETS)
 
-    def chamber_recipes(self, chamber):
-        """见 GdeClient.chamber_recipes。"""
-        if chamber not in self.chambers:
-            raise GdeNotFound(f"腔室 {chamber} 不存在")
-        return list(self.chambers[chamber][1])
+    def fleet_chambers(self, fleet, start, end):
+        """见 GdeClient.fleet_chambers。假数据不区分时间范围。"""
+        if fleet not in FAKE_FLEETS:
+            raise GdeNotFound(f"fleet {fleet} 不存在")
+        return sorted((t, c) for c, (t, _) in self.chambers.items() if t in FAKE_FLEETS[fleet])
+
+    def list_recipes(self):
+        """见 GdeClient.list_recipes。"""
+        return sorted({r for _, rs in self.chambers.values() for r in rs})
+
+    def recipe_chambers(self, recipe):
+        """见 GdeClient.recipe_chambers。"""
+        out = sorted((t, c) for c, (t, rs) in self.chambers.items() if recipe in rs)
+        if not out:
+            raise GdeNotFound(f"recipe {recipe} 不存在")
+        return out
 
     # ---- 订阅
     def subscribe(self, tool, chamber, recipes):

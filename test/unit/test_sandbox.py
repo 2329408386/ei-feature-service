@@ -1,8 +1,8 @@
-"""沙箱：真实子进程 + 假 GDE + 本地特征包。"""
+"""沙箱：真实子进程 + 假 GDE + 本地算子文件。"""
 
 import pytest
 
-from src.engine.sandbox import Sandbox
+from src.engine.sandbox import OperatorRef, Sandbox
 from src.util import storage
 from src.util.gde import GdeUnavailable
 
@@ -18,15 +18,16 @@ def sandbox():
 
 @pytest.fixture
 def package(tmp_path, monkeypatch):
-    """把特征包写到临时目录，返回 (id, version, hash)。"""
+    """把算子文件写到临时目录，返回 OperatorRef。"""
     store = storage.LocalStore(tmp_path / "store")
     monkeypatch.setattr(storage, "get_store", lambda: store)
     monkeypatch.setattr(storage, "PACKAGE_CACHE_DIR", tmp_path / "cache")
 
-    def make(fid: str, spec: bytes, code: bytes):
-        store.put(fid, "1.0.0", storage.SPEC_FILE, spec)
-        store.put(fid, "1.0.0", storage.CODE_FILE, code)
-        return fid, "1.0.0", storage.package_hash(spec, code)
+    def make(fid: str, spec: bytes, code: bytes, code_file: str = "calc_v1.py") -> OperatorRef:
+        prefix = storage.operator_prefix(fid, "calc", 1)
+        store.put(prefix + storage.SPEC_FILE, spec)
+        store.put(prefix + code_file, code)
+        return OperatorRef(fid, "calc", 1, storage.code_hash(spec, code), code_file)
 
     return make
 
@@ -34,11 +35,12 @@ def package(tmp_path, monkeypatch):
 async def run(sandbox, package, fetch: str, compute: str, run_id: str = "RUN-0338"):
     code = FETCH.format(fetch="    " + fetch, compute="    " + compute).encode()
     fid = f"t_{abs(hash(code)) % 10**8}"
-    return await sandbox.run(*package(fid, b"{}", code), run_id)
+    return await sandbox.run(package(fid, b"{}", code), run_id)
 
 
-async def test_sample_feature(sandbox, package, sample_package):
-    r = await sandbox.run(*package("gas_flow_diffmean", *sample_package), "RUN-0338")
+async def test_sample_operator(sandbox, package, sample):
+    *_, code = sample
+    r = await sandbox.run(package("gas_flow_diffmean", b"{}", code.encode(), "diffmean_v1.py"), "RUN-0338")
     assert r.reason is None and isinstance(r.value, float)
     assert set(r.data_summary) == {"actual", "setpoint"}
 
@@ -60,6 +62,12 @@ async def test_reasons(sandbox, package, monkeypatch, fetch, compute, run_id, re
     monkeypatch.setattr("src.engine.sandbox.FETCH_TIMEOUT_S", 1)
     r = await run(sandbox, package, fetch, compute, run_id)
     assert r.value is None and r.reason == reason
+
+
+async def test_hash_mismatch_is_rejected(sandbox, package, tmp_path):
+    op = package("t_hash", b"{}", FETCH.format(fetch="    return {}", compute="    return 1").encode())
+    with pytest.raises(RuntimeError, match="hash 不一致"):
+        await sandbox.run(OperatorRef(op.feature_id, op.operator, op.version, "0" * 64, op.code_file), "RUN-0338")
 
 
 async def test_gde_unavailable_is_raised(sandbox, package):

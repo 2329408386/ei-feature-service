@@ -13,7 +13,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from src import engine
-from src.api import batches, bindings, features, schedules, values
+from src.api import batches, bindings, features, gde, operators, schedules, values
 from src.util import db, errors
 from src.util.config import settings
 
@@ -33,7 +33,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="ei-feature-service", lifespan=lifespan)
 errors.install(app)
-for module in (features, bindings, schedules, batches, values):
+for module in (features, operators, bindings, gde, schedules, batches, values):
     app.include_router(module.router, prefix="/api")
 
 

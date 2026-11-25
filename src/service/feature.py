@@ -1,29 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
-"""特征：上传、查询、提交评审、评审、下线、删除草稿、试跑。
+"""特征：新增、查询、提交评审、评审、下线、删除草稿。
 
-状态流转：draft --submit(本人)--> review --approve(他人)--> published --retire--> retired
-                                  review --reject(他人, 意见)--> draft
+特征只有元数据（feature.json），计算代码在算子里（见 operator.py）。
+同一 feature_id 同时最多一个已发布版本：新版本评审通过时，旧的已发布版本自动下线（其算子不受影响）；
+手动下线已发布版本表示整个特征下线，其全部已发布算子随之下线并从绑定中移除。
 """
-
-import asyncio
 
 from sqlalchemy import func, or_, select, text
 
-from src.api.schemas import FeatureReviewIn
-from src.engine.sandbox import get_sandbox
-from src.model.tables import Feature
-from src.service import binding
-from src.service.package import check_package
+from src.api.schemas import ReviewIn
+from src.model.tables import Feature, Operator
+from src.service import operator, subscription
+from src.service import review as flow
+from src.service.package import check_feature_spec
 from src.util import db, semver
-from src.util.config import TRIAL_CONCURRENCY
-from src.util.errors import conflict, forbidden, gde_unavailable, invalid, invalid_state, not_found
-from src.util.gde import GdeNotFound, GdeUnavailable, get_gde
-from src.util.storage import CODE_FILE, SPEC_FILE, get_store, package_hash, package_uri
+from src.util.errors import conflict, invalid, not_found
 from src.util.timeutil import now
-
-_trials = asyncio.Semaphore(TRIAL_CONCURRENCY)
 
 
 async def _get(s, feature_id: str, version: str, lock: bool = False) -> Feature:
@@ -34,35 +28,23 @@ async def _get(s, feature_id: str, version: str, lock: bool = False) -> Feature:
     return row
 
 
-# ---------------------------------------------------------------- 上传与查询
-async def upload(spec_raw: bytes, code_raw: bytes, user: str) -> Feature:
-    """校验特征包，版本号必须大于已有版本；文件存入对象存储后生成草稿。"""
-    spec, errors = check_package(spec_raw, code_raw)
+# ---------------------------------------------------------------- 新增与查询
+async def create(spec: dict, user: str) -> Feature:
+    """校验 feature.json，版本号必须大于已有版本，生成草稿。"""
+    errors = check_feature_spec(spec)
     if errors:
-        raise invalid("PACKAGE_INVALID", "特征包校验失败", errors)
+        raise invalid("SPEC_INVALID", "feature.json 校验失败", errors)
     fid, ver = spec["id"], spec["version"]
-    store, stored = get_store(), False
-    try:
-        async with db.session() as s:
-            await db.lock(s, f"feature:{fid}")  # 同一特征的上传串行，版本判断才可靠
-            versions = (await s.execute(select(Feature.version).where(Feature.feature_id == fid))).scalars().all()
-            if ver in versions:
-                raise conflict("VERSION_EXISTS", f"{fid}@{ver} 已存在")
-            if versions and semver.parse(ver) <= max(map(semver.parse, versions)):
-                raise conflict("VERSION_NOT_INCREASING", f"新版本必须大于已有的最大版本 {max(versions, key=semver.parse)}")
-            await asyncio.to_thread(store.put, fid, ver, SPEC_FILE, spec_raw)
-            await asyncio.to_thread(store.put, fid, ver, CODE_FILE, code_raw)
-            stored = True
-            row = Feature(
-                feature_id=fid, version=ver, status="draft", spec=spec, created_by=user, review_log=[],
-                package_uri=package_uri(fid, ver), package_hash=package_hash(spec_raw, code_raw),
-            )
-            s.add(row)
-        return row
-    except Exception:
-        if stored:  # 入库失败时清理已上传的文件
-            await asyncio.to_thread(store.delete, fid, ver)
-        raise
+    async with db.session() as s:
+        await db.lock(s, f"feature:{fid}")  # 同一特征的新增串行，版本判断才可靠
+        versions = (await s.execute(select(Feature.version).where(Feature.feature_id == fid))).scalars().all()
+        if ver in versions:
+            raise conflict("VERSION_EXISTS", f"{fid}@{ver} 已存在")
+        if versions and semver.parse(ver) <= max(map(semver.parse, versions)):
+            raise conflict("VERSION_NOT_INCREASING", f"新版本必须大于已有的最大版本 {max(versions, key=semver.parse)}")
+        row = Feature(feature_id=fid, version=ver, status="draft", spec=spec, created_by=user, review_log=[])
+        s.add(row)
+    return row
 
 
 async def list_features(status: str | None, q: str | None, feature_id: str | None, page: int, size: int):
@@ -87,93 +69,66 @@ async def list_features(status: str | None, q: str | None, feature_id: str | Non
     return rows, total
 
 
-async def get_feature(feature_id: str, version: str) -> tuple[Feature, str]:
-    """特征和它的 compute.py 源码。"""
+async def get_feature(feature_id: str, version: str) -> tuple[Feature, list[Operator]]:
+    """特征和该 feature_id 下的全部算子（按名称、版本降序）。"""
     async with db.session() as s:
         row = await _get(s, feature_id, version)
-    code = await asyncio.to_thread(get_store().get, feature_id, version, CODE_FILE)
-    return row, code.decode("utf-8")
+        ops = (await s.execute(
+            select(Operator).where(Operator.feature_id == feature_id)
+            .order_by(Operator.name, Operator.version.desc())
+        )).scalars().all()
+    return row, ops
 
 
 # ---------------------------------------------------------------- 状态流转
 async def submit(feature_id: str, version: str, user: str) -> Feature:
-    """草稿 -> 待评审，只有上传人可以提交。"""
+    """草稿 -> 待评审，只有提交人可以提交。"""
     async with db.session() as s:
         row = await _get(s, feature_id, version, lock=True)
-        if row.status != "draft":
-            raise invalid_state("只有草稿可以提交评审", row.status)
-        if row.created_by != user:
-            raise forbidden("只有提交人可以提交评审")
-        row.status, row.submitted_at = "review", now()
+        flow.submit(row, user)
     return row
 
 
-async def review(feature_id: str, version: str, body: FeatureReviewIn, user: str) -> Feature:
-    """评审（评审人不能是提交人）：通过需至少试跑过一个 run_id，退回需填写意见。"""
-    decision, trial_runs = body.decision, body.trial_runs
-    comment = (body.comment or "").strip() or None
+async def review(feature_id: str, version: str, body: ReviewIn, user: str) -> Feature:
+    """评审（评审人不能是提交人，不需要试跑）。通过时旧的已发布版本自动下线。"""
     async with db.session() as s:
+        await db.lock(s, f"feature:{feature_id}")
         row = await _get(s, feature_id, version, lock=True)
-        if row.status != "review":
-            raise invalid_state("只有待评审的特征可以评审", row.status)
-        if row.created_by == user:
-            raise forbidden("评审人不能是提交人")
-        if decision == "approve":
-            if not trial_runs:
-                raise invalid("TRIAL_REQUIRED", "评审通过前至少试跑 1 个 run_id")
-            row.status, row.published_by, row.published_at = "published", user, now()
-        else:
-            if not comment:
-                raise invalid("VALIDATION_ERROR", "退回时必须填写评审意见")
-            row.status = "draft"
-        entry = {
-            "decision": decision, "reviewer": user, "comment": comment, "trial_runs": trial_runs,
-            "at": now().isoformat(),
-        }
-        row.review_log = [*row.review_log, entry]  # 重新赋值，SQLAlchemy 才会检测到 JSONB 变化
+        if flow.review(row, body, user, need_trial=False):
+            old = (await s.execute(
+                select(Feature).where(Feature.feature_id == feature_id, Feature.status == "published").with_for_update()
+            )).scalar_one_or_none()
+            if old is not None:
+                old.status, old.retired_by, old.retired_at = "retired", user, now()
+                old.retire_reason = f"被 {version} 替代"
+                await s.flush()  # 先让旧版本退出 published，避免违反“每个特征一个已发布版本”的唯一索引
+            flow.publish(row, user)
     return row
 
 
-async def retire(feature_id: str, version: str, reason: str, user: str) -> tuple[Feature, list[dict]]:
-    """下线：从所有生效绑定中移除，撤回相关待审核修订；订阅变更写入 gde_outbox 后立即尝试执行。"""
-    from src.engine.jobs import process_outbox
-
+async def retire(feature_id: str, version: str, reason: str, user: str) -> tuple[Feature, list[str], list[dict]]:
+    """下线整个特征：该版本 -> retired，其全部已发布算子一起下线并从绑定中移除。"""
     async with db.session() as s:
+        await db.lock(s, f"feature:{feature_id}")
         row = await _get(s, feature_id, version, lock=True)
-        if row.status != "published":
-            raise invalid_state("只有已发布的特征可以下线", row.status)
-        row.status, row.retired_by, row.retired_at, row.retire_reason = "retired", user, now(), reason
-        affected = await binding.remove_feature(s, feature_id, version)
-    await process_outbox()  # 失败的调用留在 outbox，由后台任务继续重试
-    return row, affected
+        flow.retire(row, reason, user)
+        ops = (await s.execute(
+            select(Operator).where(Operator.feature_id == feature_id, Operator.status == "published")
+            .order_by(Operator.name, Operator.version).with_for_update()
+        )).scalars().all()
+        refs, affected = [], []
+        for op in ops:
+            refs.append(op.ref)
+            hit = await operator.retire_in_tx(s, op, f"特征 {feature_id}@{version} 下线：{reason}", user)
+            if hit:
+                affected.append(hit)
+    await subscription.sync({c for a in affected for c in a["chambers"]})
+    return row, refs, affected
 
 
 async def delete_draft(feature_id: str, version: str, user: str) -> None:
-    """删除自己的草稿，连同对象存储中的文件。"""
+    """删除自己的草稿。"""
     async with db.session() as s:
         row = await _get(s, feature_id, version, lock=True)
-        if row.status != "draft":
-            raise invalid_state("只有草稿可以删除", row.status)
-        if row.created_by != user:
-            raise forbidden("只能删除自己的草稿")
+        flow.check_deletable(row, user)
         await s.delete(row)
-    await asyncio.to_thread(get_store().delete, feature_id, version)
-
-
-# ---------------------------------------------------------------- 试跑
-async def trial(feature_id: str, version: str, run_id: str) -> dict:
-    """按生产同样的方式执行一次 fetch + compute，结果只返回，不写库。"""
-    async with db.session() as s:
-        row = await _get(s, feature_id, version)
-    if row.status == "retired":
-        raise invalid_state("已下线的特征不能试跑", row.status)
-    try:
-        run = await asyncio.to_thread(get_gde().run_info, run_id)
-        async with _trials:
-            r = await get_sandbox().run(feature_id, version, row.package_hash, run_id)
-    except GdeNotFound:
-        raise not_found(f"执行 {run_id}") from None
-    except GdeUnavailable as e:
-        raise gde_unavailable(str(e)) from None
-    run_out = {k: getattr(run, k) for k in ("run_id", "tool", "chamber", "recipe", "lot", "wafer", "end_at")}
-    return {"run": run_out, **r.__dict__}

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
-"""特征包运行库。特征包这样使用：
+"""算子运行库。算子代码这样使用：
 
     from eifeature import gde, ops, Skip
 

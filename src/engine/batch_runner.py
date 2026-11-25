@@ -14,9 +14,9 @@ import logging
 from sqlalchemy import select, text
 
 from src.engine.sandbox import get_sandbox
-from src.engine.writer import FeatureRef, RunRef, add_run, has_value, overwrite_value, write_value
-from src.model.tables import BindingItem, ChamberBinding, Feature, FeatureBatch
-from src.service.binding import recipes_of
+from src.engine.writer import OperatorRef, RunRef, add_run, has_value, load_operators, overwrite_value, write_value
+from src.model.tables import FeatureBatch
+from src.service.refs import parse_ref
 from src.util import db
 from src.util.gde import GdeError, GdeUnavailable, get_gde
 from src.util.limits import limits
@@ -64,59 +64,53 @@ async def _finish(batch_id: int, status: str, error: str | None = None) -> None:
             b.status, b.error, b.finished_at = status, error, now()
 
 
-async def _plan(b: FeatureBatch) -> tuple[list[str], dict[str, list[FeatureRef]]]:
-    """该批次涉及的配方，以及每个配方要算的特征（限定在批次所选特征内）。"""
+async def _plan(b: FeatureBatch) -> tuple[list[str], dict[str, list[OperatorRef]]]:
+    """按批次创建时的快照 b.plan：涉及的 recipe（排序），以及每个 recipe 要算的算子。"""
+    refs = sorted({ref for refs in b.plan.values() for ref in refs})
     async with db.session() as s:
-        rev = await s.get(ChamberBinding, (b.chamber, b.binding_revision))
-        rows = (await s.execute(
-            select(BindingItem.recipe, Feature.feature_id, Feature.version, Feature.package_hash)
-            .join(Feature, (Feature.feature_id == BindingItem.feature_id) & (Feature.version == BindingItem.version))
-            .where(BindingItem.chamber == b.chamber, BindingItem.revision == b.binding_revision)
-        )).tuples().all()
-    plan: dict[str, list[FeatureRef]] = {}
-    for recipe, fid, ver, h in rows:
-        if f"{fid}@{ver}" in b.features:
-            plan.setdefault(recipe, []).append(FeatureRef(fid, ver, h))
-    return [r for r in recipes_of(rev.spec) if r in plan], plan
+        ops = await load_operators(s, [parse_ref(r) for r in refs])
+    plan = {recipe: [ops[r] for r in refs if r in ops] for recipe, refs in b.plan.items()}
+    plan = {recipe: v for recipe, v in plan.items() if v}
+    return sorted(plan), plan
 
 
 async def _supersede(b: FeatureBatch) -> None:
-    """重算完成后：同腔室、时间重叠、特征有交集、尚未被覆盖的旧批次标记为被本批次覆盖。"""
+    """重算完成后：同腔室、时间重叠、算子有交集、尚未被覆盖的旧批次标记为被本批次覆盖。"""
     async with db.session() as s:
         await s.execute(
             text("""
                 UPDATE feature_batch SET superseded_by = :bid
                 WHERE chamber = :chamber AND batch_id <> :bid AND superseded_by IS NULL
                   AND status IN ('running', 'done') AND data_from < :to AND data_to > :from
-                  AND (features IS NULL OR features ?| CAST(:feats AS text[]))
+                  AND (operators IS NULL OR operators ?| CAST(:ops AS text[]))
             """),
-            {"bid": b.batch_id, "chamber": b.chamber, "from": b.data_from, "to": b.data_to, "feats": b.features},
+            {"bid": b.batch_id, "chamber": b.chamber, "from": b.data_from, "to": b.data_to, "ops": b.operators},
         )
 
 
 async def _list_runs(b: FeatureBatch, recipes: list[str]) -> list:
-    """经 SDK 拉取批次时间范围内、属于这些配方的执行清单。"""
+    """经 SDK 拉取批次时间范围内、属于这些 recipe 的执行清单。"""
     if not recipes:
         return []
     gde = get_gde()
     return await _with_retry(lambda: asyncio.to_thread(gde.list_runs, b.chamber, recipes, b.data_from, b.data_to))
 
 
-async def _compute_one(b: FeatureBatch, f: FeatureRef, ref: RunRef, overwrite: bool) -> None:
-    """计算一个 (特征, 执行) 并写入；fill 模式下已有值则跳过。"""
+async def _compute_one(b: FeatureBatch, op: OperatorRef, ref: RunRef, overwrite: bool) -> None:
+    """计算一个 (算子, 执行) 并写入；fill 模式下已有值则跳过。"""
     if not overwrite:
         async with db.session() as s:
-            if await has_value(s, f, ref.run_id):
+            if await has_value(s, op, ref.run_id):
                 return
 
     async def call():
         async with limits.slot(b.chamber, backfill=True):
-            return await get_sandbox().run(f.feature_id, f.version, f.package_hash, ref.run_id)
+            return await get_sandbox().run(op, ref.run_id)
 
     r = await _with_retry(call)
     async with db.session() as s:
         write = overwrite_value if overwrite else write_value
-        await write(s, b.batch_id, f, ref, r)
+        await write(s, b.batch_id, op, ref, r)
 
 
 async def execute(b: FeatureBatch) -> None:
@@ -128,8 +122,8 @@ async def execute(b: FeatureBatch) -> None:
             if await _status(b.batch_id) == "cancelled":
                 return
             ref = RunRef(run.run_id, run.tool, run.chamber, run.recipe, run.lot, run.wafer, run.end_at)
-            for f in plan.get(run.recipe, []):
-                await _compute_one(b, f, ref, overwrite)
+            for op in plan.get(run.recipe, []):
+                await _compute_one(b, op, ref, overwrite)
             async with db.session() as s:
                 await add_run(s, b.batch_id)
     except (BatchFailed, GdeError) as e:

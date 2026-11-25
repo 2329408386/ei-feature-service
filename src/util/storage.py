@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
-"""特征包文件存储：MinIO（生产）或本地目录（endpoint 为 file:// 时，用于开发和测试）。
+"""算子文件存储：MinIO（生产）或本地目录（endpoint 为 file:// 时，用于开发和测试）。
 
-对象键：features/{feature_id}/{version}/feature.json、compute.py
+对象键：features/{feature_id}/operators/{name}/{version}/operator.json、{code_file}
 """
 
 import hashlib
@@ -15,35 +15,36 @@ from pathlib import Path
 
 from src.util.config import PACKAGE_CACHE_DIR, ROOT, MinioConfig, settings
 
-SPEC_FILE, CODE_FILE = "feature.json", "compute.py"
+SPEC_FILE = "operator.json"
 
 
-def package_hash(spec: bytes, code: bytes) -> str:
-    """特征包内容 hash：feature.json 和 compute.py 一起计算。"""
+def code_hash(spec: bytes, code: bytes) -> str:
+    """算子内容 hash：operator.json 和代码一起计算。"""
     return hashlib.sha256(spec + b"\n" + code).hexdigest()
 
 
-def _key(feature_id: str, version: str, name: str = "") -> str:
-    return f"features/{feature_id}/{version}/{name}"
+def operator_prefix(feature_id: str, name: str, version: int) -> str:
+    """算子某个版本的对象键前缀（以 / 结尾）。"""
+    return f"features/{feature_id}/operators/{name}/{version}/"
 
 
 class LocalStore:
     def __init__(self, root: Path):
         self.root = root
 
-    def put(self, feature_id: str, version: str, name: str, data: bytes) -> None:
-        """写入特征包中的一个文件。"""
-        path = self.root / _key(feature_id, version, name)
+    def put(self, key: str, data: bytes) -> None:
+        """写入一个对象。"""
+        path = self.root / key
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
-    def get(self, feature_id: str, version: str, name: str) -> bytes:
-        """读取特征包中的一个文件。"""
-        return (self.root / _key(feature_id, version, name)).read_bytes()
+    def get(self, key: str) -> bytes:
+        """读取一个对象。"""
+        return (self.root / key).read_bytes()
 
-    def delete(self, feature_id: str, version: str) -> None:
-        """删除整个特征包目录。"""
-        shutil.rmtree(self.root / _key(feature_id, version), ignore_errors=True)
+    def delete_prefix(self, prefix: str) -> None:
+        """删除前缀下的全部对象。"""
+        shutil.rmtree(self.root / prefix, ignore_errors=True)
 
 
 class MinioStore:
@@ -55,23 +56,23 @@ class MinioStore:
         if not self.client.bucket_exists(self.bucket):
             self.client.make_bucket(self.bucket)
 
-    def put(self, feature_id, version, name, data):
-        """写入特征包中的一个文件。"""
-        self.client.put_object(self.bucket, _key(feature_id, version, name), io.BytesIO(data), len(data))
+    def put(self, key, data):
+        """写入一个对象。"""
+        self.client.put_object(self.bucket, key, io.BytesIO(data), len(data))
 
-    def get(self, feature_id, version, name):
-        """读取特征包中的一个文件。"""
-        resp = self.client.get_object(self.bucket, _key(feature_id, version, name))
+    def get(self, key):
+        """读取一个对象。"""
+        resp = self.client.get_object(self.bucket, key)
         try:
             return resp.read()
         finally:
             resp.close()
             resp.release_conn()
 
-    def delete(self, feature_id, version):
-        """删除特征包的全部文件。"""
-        for name in (SPEC_FILE, CODE_FILE):
-            self.client.remove_object(self.bucket, _key(feature_id, version, name))
+    def delete_prefix(self, prefix):
+        """删除前缀下的全部对象。"""
+        for obj in self.client.list_objects(self.bucket, prefix=prefix, recursive=True):
+            self.client.remove_object(self.bucket, obj.object_name)
 
 
 def make_store(cfg: MinioConfig) -> LocalStore | MinioStore:
@@ -88,26 +89,26 @@ def get_store() -> LocalStore | MinioStore:
     return make_store(settings.minio)
 
 
-def package_uri(feature_id: str, version: str) -> str:
-    """特征包所在位置，用于展示。"""
-    return f"{settings.minio.endpoint.rstrip('/')}/{settings.minio.bucket}/{_key(feature_id, version)}"
+def operator_uri(feature_id: str, name: str, version: int) -> str:
+    """算子文件所在位置，用于展示。"""
+    return f"{settings.minio.endpoint.rstrip('/')}/{settings.minio.bucket}/{operator_prefix(feature_id, name, version)}"
 
 
-def local_package(feature_id: str, version: str, expected_hash: str) -> Path:
-    """把特征包下载到本地缓存目录并校验 hash，返回目录（含 feature.json、compute.py）。"""
-    target = PACKAGE_CACHE_DIR / feature_id / version / expected_hash[:12]
-    if (target / CODE_FILE).exists():
-        return target
-    store = get_store()
-    spec, code = store.get(feature_id, version, SPEC_FILE), store.get(feature_id, version, CODE_FILE)
-    if package_hash(spec, code) != expected_hash:
-        raise RuntimeError(f"特征包 {feature_id}@{version} hash 不一致，文件可能被改动")
+def local_operator(feature_id: str, name: str, version: int, code_file: str, expected_hash: str) -> Path:
+    """把算子文件下载到本地缓存目录并校验 hash，返回代码文件路径。"""
+    target = PACKAGE_CACHE_DIR / feature_id / name / str(version) / expected_hash[:12]
+    if (target / code_file).exists():
+        return target / code_file
+    store, prefix = get_store(), operator_prefix(feature_id, name, version)
+    spec, code = store.get(prefix + SPEC_FILE), store.get(prefix + code_file)
+    if code_hash(spec, code) != expected_hash:
+        raise RuntimeError(f"算子 {feature_id}/{name}@{version} hash 不一致，文件可能被改动")
     tmp = target.parent / f"{target.name}.{uuid.uuid4().hex}.tmp"
     tmp.mkdir(parents=True)
     (tmp / SPEC_FILE).write_bytes(spec)
-    (tmp / CODE_FILE).write_bytes(code)
+    (tmp / code_file).write_bytes(code)
     try:
-        tmp.rename(target)  # 原子落盘，避免并发时读到半个包
+        tmp.rename(target)  # 原子落盘，避免并发时读到半个目录
     except OSError:  # 别的进程已经放好了
         shutil.rmtree(tmp, ignore_errors=True)
-    return target
+    return target / code_file

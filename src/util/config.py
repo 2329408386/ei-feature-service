@@ -26,7 +26,7 @@ class RedisConfig(BaseModel):
 
 
 class MinioConfig(BaseModel):
-    # endpoint 以 file:// 开头时改用本地目录存特征包（本地开发、测试用）
+    # endpoint 以 file:// 开头时改用本地目录存算子文件（本地开发、测试用）
     endpoint: str
     access_key: str = ""
     secret_key: str = ""

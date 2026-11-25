@@ -20,7 +20,7 @@ class ValueQuery(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    feature: str = Field(description="id@version")
+    operator: str = Field(description="feature_id/operator@version")
     tool: str | None = None
     chamber: str | None = None
     recipe: str | None = None
@@ -37,7 +37,7 @@ class ValueQuery(BaseModel):
 async def query(q: Annotated[ValueQuery, Query()]):
     """按执行结束时间升序。"""
     items, total = await svc.query(
-        q.feature, tool=q.tool, chamber=q.chamber, recipe=q.recipe, wafer=q.wafer, lot=q.lot,
+        q.operator, tool=q.tool, chamber=q.chamber, recipe=q.recipe, wafer=q.wafer, lot=q.lot,
         start=q.from_, end=q.to, only_null=q.only_null, page=q.page, size=q.page_size,
     )
     return {"items": items, "total": total, "page": q.page, "page_size": q.page_size}

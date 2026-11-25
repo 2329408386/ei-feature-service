@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-ei-feature-service：特征计算服务。管理特征包（feature.json + compute.py）的上传/审核/发布，把特征绑定到腔室，按 GDE 的 run_id 实时或批量计算特征值。
+ei-feature-service：特征计算服务。特征（feature.json，只有元数据）下挂多个算子（operator.json + py 代码，各自版本、各自评审），算子按 recipe → 机台/腔室 绑定，按 GDE 的 run_id 实时或批量计算特征值。
 
 ## 设计文档是唯一依据
 
@@ -32,26 +32,27 @@ uv run pytest test/integration/test_flow.py -q           # 集成测试（需要
 ## 配置
 
 - 只有 `config/config.json`（不用环境变量、不用 .env），由 `src/util/config.py` 读取并用 pydantic 校验；其余调优参数是 `config.py` 里的代码常量。
-- `minio.endpoint` 以 `file://` 开头时改用本地目录存特征包（`LocalStore`），否则连 MinIO。
+- `minio.endpoint` 以 `file://` 开头时改用本地目录存算子文件（`LocalStore`），否则连 MinIO。
 - `gde.fake=true` 使用内存版 `FakeGdeClient`；真实 GDE SDK 尚未接入（`src/util/gde.py` 中 `SdkGdeClient` 为 TODO）。
 
 ## 架构
 
 单进程：`main.py` 启动时 读配置 → 执行 `src/model/schema.sql`（全部 `IF NOT EXISTS`，带 advisory lock）→ 启动后台任务 → uvicorn。没有单独的 worker；多实例靠 Redis 消费组和 `FOR UPDATE SKIP LOCKED` 去重。
 
-- `src/api/` — FastAPI 路由（features / bindings / schedules / batches / values），统一前缀 `/api`；`schemas.py` 是请求/响应模型。
-- `src/service/` — 业务逻辑（特征包校验与生命周期、绑定修订、批次、取值）。
-- `src/engine/` — 后台计算：`live.py` 消费 Redis Stream `gde:run:done` 做实时计算；`batch_runner.py` 补算/重算；`jobs.py` 定时任务；`sandbox.py` 用 pebble 进程池隔离执行特征包代码；`writer.py` 写结果。后台任务由 `_supervise` 包装，异常 10 秒后重启。
-- `src/eifeature/` — 特征包运行库（包内 `from eifeature import gde, ops, Skip`）：`fetch(run_id)` 取数，`compute(data)` 纯计算，数据不合格 `raise Skip("REASON_CODE")`。
-- `src/model/` — `schema.sql` 建表（无迁移工具），`tables.py` 为 SQLAlchemy ORM 模型（DeclarativeBase）。
-- `src/util/` — config、db（异步引擎、`session()` 事务、`lock()` advisory lock）、storage（MinIO/本地，对象键 `features/{id}/{version}/`）、auth、errors、stream、gde 等。
+- `src/api/` — FastAPI 路由（features / operators / bindings / gde / schedules / batches / values），统一前缀 `/api`；`schemas.py` 是请求/响应模型；`gde.py` 把 fleet、recipe 等元数据转发给绑定页面。
+- `src/service/` — 业务逻辑：`feature.py`（特征，新版本发布时旧版本自动下线）、`operator.py`（算子，同名再提交版本 +1）、`review.py`（共用状态流转）、`binding.py`（按算子的绑定修订）、`subscription.py`（按腔室汇总 recipe、对账同步 GDE 订阅）、批次、取值。
+- `src/engine/` — 后台计算：`live.py` 消费 Redis Stream `gde:run:done` 做实时计算；`batch_runner.py` 补算/重算；`sandbox.py` 用 pebble 进程池隔离执行算子代码；`writer.py` 写结果；`jobs.py` 定时任务：实时批次收尾 + 每分钟同步未同步的腔室订阅。后台任务由 `_supervise` 包装，异常 10 秒后重启。
+- `src/eifeature/` — 算子运行库（算子代码里 `from eifeature import gde, ops, Skip`）：`fetch(run_id)` 取数，`compute(data)` 纯计算，数据不合格 `raise Skip("REASON_CODE")`。
+- `src/model/` — `schema.sql` 建表（无迁移工具；本版与旧的“特征包 + 按腔室绑定”表结构不兼容，旧库需先清空），`tables.py` 为 SQLAlchemy ORM 模型（DeclarativeBase）。
+- `src/util/` — config、db（异步引擎、`session()` 事务、`lock()` advisory lock）、storage（MinIO/本地，对象键 `features/{feature_id}/operators/{name}/{version}/`）、auth、errors、stream、gde 等。
 
 ## 约定
 
 - 认证：网关注入 `X-User` 请求头；缺失返回 401，`system` 为保留用户名（403）。
-- 错误统一走 `src/util/errors.py`，返回 `{code, message, details}`，如 `VERSION_EXISTS`、`PACKAGE_INVALID`。
+- 错误统一走 `src/util/errors.py`，返回 `{code, message, details}`，如 `VERSION_EXISTS`、`SPEC_INVALID`。
+- 引用格式：特征 `feature_id@1.0.0`（语义化版本）；算子 `feature_id/operator@2`（整数版本），绑定、批次、特征值都按算子引用。
 - 依赖版本全部 `==` 固定；代码注释、文档、提交信息使用中文。
-- 测试样例特征包在 `test/fixtures/gas_flow_diffmean/`。
+- 测试样例在 `test/fixtures/gas_flow_diffmean/`（feature.json + operator.json + compute.py）。
 
 ## Git
 

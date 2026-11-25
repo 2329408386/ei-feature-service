@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
+"""算子：新增（或同名算子的新版本）、查询、提交评审、评审、下线、删除草稿、试跑。
+
+- 算子挂在 feature_id 下，新增算子不改变特征版本；同名算子再次提交时版本号自动 +1（1, 2, 3 …）。
+- 代码文件名由用户指定，不指定时为 {name}_v{version}.py；同一特征内文件名不能重复。
+- 评审通过需至少试跑 1 个 run_id，且所属特征已有已发布版本。
+"""
+
+import asyncio
+import json
+
+from sqlalchemy import func, or_, select
+
+from src.api.schemas import OperatorIn, ReviewIn
+from src.engine.sandbox import get_sandbox
+from src.model.tables import Feature, Operator
+from src.service import binding, subscription
+from src.service import review as flow
+from src.service.package import check_operator
+from src.util import db
+from src.util.config import TRIAL_CONCURRENCY
+from src.util.errors import conflict, gde_unavailable, invalid, invalid_state, not_found
+from src.util.gde import GdeNotFound, GdeUnavailable, get_gde
+from src.util.storage import SPEC_FILE, code_hash, get_store, operator_prefix, operator_uri
+
+_trials = asyncio.Semaphore(TRIAL_CONCURRENCY)
+
+
+async def _get(s, feature_id: str, name: str, version: int, lock: bool = False) -> Operator:
+    stmt = select(Operator).where(Operator.feature_id == feature_id, Operator.name == name, Operator.version == version)
+    row = (await s.execute(stmt.with_for_update() if lock else stmt)).scalar_one_or_none()
+    if row is None:
+        raise not_found(f"算子 {feature_id}/{name}@{version}")
+    return row
+
+
+def spec_bytes(spec: dict) -> bytes:
+    """operator.json 的规范化字节（键排序），存储和计算 hash 都用它。"""
+    return json.dumps(spec, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8")
+
+
+async def _feature_statuses(s, feature_id: str) -> list[str]:
+    return (await s.execute(select(Feature.status).where(Feature.feature_id == feature_id))).scalars().all()
+
+
+# ---------------------------------------------------------------- 新增与查询
+async def create(body: OperatorIn, user: str) -> Operator:
+    """校验后把 operator.json 和代码存入对象存储，生成草稿；版本号 = 同名算子已有最大版本 + 1。"""
+    errors = check_operator(body.spec, body.code, body.code_file)
+    if errors:
+        raise invalid("SPEC_INVALID", "算子校验失败", errors)
+    fid, name = body.feature_id, body.spec["name"]
+    spec_raw, code_raw = spec_bytes(body.spec), body.code.encode("utf-8")
+    store, prefix = get_store(), None
+    try:
+        async with db.session() as s:
+            await db.lock(s, f"feature:{fid}")  # 同一特征内的版本号、文件名判断串行
+            statuses = await _feature_statuses(s, fid)
+            if not statuses:
+                raise not_found(f"特征 {fid}")
+            if all(x == "retired" for x in statuses):
+                raise invalid_state(f"特征 {fid} 已下线，不能再增加算子", "retired")
+            last = await s.scalar(select(func.max(Operator.version)).where(
+                Operator.feature_id == fid, Operator.name == name))
+            ver = (last or 0) + 1
+            code_file = body.code_file or f"{name}_v{ver}.py"
+            if await s.scalar(select(Operator.name).where(Operator.feature_id == fid, Operator.code_file == code_file)):
+                raise conflict("CODE_FILE_EXISTS", f"特征 {fid} 中已有文件 {code_file}，请换一个文件名")
+            prefix = operator_prefix(fid, name, ver)
+            await asyncio.to_thread(store.put, prefix + SPEC_FILE, spec_raw)
+            await asyncio.to_thread(store.put, prefix + code_file, code_raw)
+            row = Operator(
+                feature_id=fid, name=name, version=ver, status="draft", spec=body.spec, code_file=code_file,
+                code_uri=operator_uri(fid, name, ver), code_hash=code_hash(spec_raw, code_raw),
+                created_by=user, review_log=[],
+            )
+            s.add(row)
+        return row
+    except Exception:
+        if prefix:  # 入库失败时清理已上传的文件
+            await asyncio.to_thread(store.delete_prefix, prefix)
+        raise
+
+
+async def list_operators(feature_id: str | None, name: str | None, status: str | None, q: str | None,
+                         page: int, size: int):
+    """分页查询，q 匹配算子名或描述；按特征、算子名、版本降序。返回 (rows, total)。"""
+    cond = []
+    if feature_id:
+        cond.append(Operator.feature_id == feature_id)
+    if name:
+        cond.append(Operator.name == name)
+    if status:
+        cond.append(Operator.status == status)
+    if q:
+        like = f"%{q}%"
+        cond.append(or_(Operator.name.ilike(like), Operator.spec["desc"].astext.ilike(like)))
+    async with db.session() as s:
+        total = await s.scalar(select(func.count()).select_from(Operator).where(*cond))
+        rows = (await s.execute(
+            select(Operator).where(*cond).order_by(Operator.feature_id, Operator.name, Operator.version.desc())
+            .offset((page - 1) * size).limit(size)
+        )).scalars().all()
+    return rows, total
+
+
+async def get_operator(feature_id: str, name: str, version: int) -> tuple[Operator, str]:
+    """算子和它的代码。"""
+    async with db.session() as s:
+        row = await _get(s, feature_id, name, version)
+    code = await asyncio.to_thread(get_store().get, operator_prefix(feature_id, name, version) + row.code_file)
+    return row, code.decode("utf-8")
+
+
+# ---------------------------------------------------------------- 状态流转
+async def submit(feature_id: str, name: str, version: int, user: str) -> Operator:
+    """草稿 -> 待评审，只有提交人可以提交。"""
+    async with db.session() as s:
+        row = await _get(s, feature_id, name, version, lock=True)
+        flow.submit(row, user)
+    return row
+
+
+async def review(feature_id: str, name: str, version: int, body: ReviewIn, user: str) -> Operator:
+    """评审：通过需至少试跑 1 个 run_id，且所属特征已发布；退回需填写意见。"""
+    async with db.session() as s:
+        row = await _get(s, feature_id, name, version, lock=True)
+        if flow.review(row, body, user, need_trial=True):
+            if "published" not in await _feature_statuses(s, feature_id):
+                raise invalid_state(f"特征 {feature_id} 还没有已发布版本，算子不能先发布", "unpublished")
+            flow.publish(row, user)
+    return row
+
+
+async def retire_in_tx(s, row: Operator, reason: str, user: str) -> dict | None:
+    """在调用方事务里下线算子并从绑定中移除；返回受影响的绑定（见 binding.remove_operator）。"""
+    flow.retire(row, reason, user)
+    return await binding.remove_operator(s, row.feature_id, row.name, row.version)
+
+
+async def retire(feature_id: str, name: str, version: int, reason: str, user: str) -> tuple[Operator, list[dict]]:
+    """下线算子：从生效绑定中移除（生成 system 修订），撤回引用它的待审核修订，提交后同步 GDE 订阅。"""
+    async with db.session() as s:
+        row = await _get(s, feature_id, name, version, lock=True)
+        hit = await retire_in_tx(s, row, reason, user)
+    affected = [hit] if hit else []
+    await subscription.sync({c for a in affected for c in a["chambers"]})
+    return row, affected
+
+
+async def delete_draft(feature_id: str, name: str, version: int, user: str) -> None:
+    """删除自己的草稿，连同对象存储中的文件。"""
+    async with db.session() as s:
+        row = await _get(s, feature_id, name, version, lock=True)
+        flow.check_deletable(row, user)
+        await s.delete(row)
+    await asyncio.to_thread(get_store().delete_prefix, operator_prefix(feature_id, name, version))
+
+
+# ---------------------------------------------------------------- 试跑
+async def trial(feature_id: str, name: str, version: int, run_id: str) -> dict:
+    """按生产同样的方式执行一次 fetch + compute，结果只返回，不写库。"""
+    from src.engine.writer import OperatorRef
+
+    async with db.session() as s:
+        row = await _get(s, feature_id, name, version)
+    if row.status == "retired":
+        raise invalid_state("已下线的算子不能试跑", row.status)
+    try:
+        run = await asyncio.to_thread(get_gde().run_info, run_id)
+        async with _trials:
+            r = await get_sandbox().run(OperatorRef.of(row), run_id)
+    except GdeNotFound:
+        raise not_found(f"执行 {run_id}") from None
+    except GdeUnavailable as e:
+        raise gde_unavailable(str(e)) from None
+    run_out = {k: getattr(run, k) for k in ("run_id", "tool", "chamber", "recipe", "lot", "wafer", "end_at")}
+    return {"run": run_out, **r.__dict__}

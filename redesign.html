@@ -169,7 +169,7 @@ li { margin: .3rem 0; }
 .check div { color: var(--fg-soft); }
 .check div::before { content: "✓"; color: var(--mint); font-weight: 700; margin-right: 6px; }
 .check div.wait::before { content: "…"; color: var(--fg-faint); }
-.bind-grid { display: grid; grid-template-columns: 1fr 160px; gap: 10px; }
+.bind-grid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; }
 .demo textarea { width: 100%; height: 210px; font-family: var(--mono); font-size: .78rem; line-height: 1.6; resize: vertical; }
 .sub { font-size: .78rem; color: var(--fg-faint); margin: 4px 0; }
 .hist { list-style: none; padding: 0; margin: 0; font-size: .8rem; }
@@ -405,7 +405,7 @@ body.present .page { font-size: 1.06rem; }
 <section class="page" id="p1">
   <span class="kicker">EI-FEATURE-SERVICE</span>
   <h1>特征只定义一次，接入任何腔室都按同一口径计算</h1>
-  <p class="lede">ei-feature-service 是一个特征计算服务：把分析中验证有效的特征上传为“特征包”，特征包按 run_id 自己取数、自己计算；接入新腔室时，只需在腔室绑定里依次选择机台、腔室、配方和特征；每个结果都能追溯来源。</p>
+  <p class="lede">ei-feature-service 是一个特征计算服务：把分析中验证有效的特征登记下来，每个特征下挂一个或多个“算子”（一段按 run_id 自己取数、自己计算的代码），算子可以随时增加、各自评审；接入新腔室时，只需在算子绑定里依次选 fleet、勾选腔室、选 recipe；每个结果都能追溯到算子版本。</p>
 
   <div class="figure" style="padding:14px 18px">
   <svg viewBox="0 0 880 128" role="img" aria-label="Python 通用微服务包含 ei-knowledge-service、ei-feature-service 等服务">
@@ -428,7 +428,7 @@ body.present .page { font-size: 1.06rem; }
   </div>
 
   <div class="figure">
-  <svg viewBox="0 0 880 370" role="img" aria-label="特征包和腔室绑定进入计算引擎，结果写入 PostgreSQL">
+  <svg viewBox="0 0 880 370" role="img" aria-label="特征算子和算子绑定进入计算引擎，结果写入 PostgreSQL">
     <circle cx="150" cy="120" r="120" fill="#EDF2FF"/>
     <circle cx="760" cy="240" r="130" fill="#E6F8F0"/>
     <circle cx="470" cy="70" r="46" fill="#FFF3E8"/>
@@ -437,16 +437,16 @@ body.present .page { font-size: 1.06rem; }
     <g filter="url(#sh)"><rect x="56" y="58" width="236" height="140" rx="24" fill="url(#gCard)"/></g>
     <rect x="80" y="82" width="34" height="34" rx="11" fill="url(#gPurple)"/>
     <path d="M90 92 h14 M90 99 h14 M90 106 h9" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
-    <text x="126" y="105" font-size="17" font-weight="700" fill="#1D2433">特征包</text>
+    <text x="126" y="105" font-size="17" font-weight="700" fill="#1D2433">特征 · 算子</text>
     <rect x="80" y="130" width="10" height="10" rx="3" fill="#4C6FFF"/><text x="98" y="139" font-size="12.5" fill="#5D6880" font-family="monospace">feature.json</text>
-    <rect x="80" y="152" width="10" height="10" rx="3" fill="#7C5CFF"/><text x="98" y="161" font-size="12.5" fill="#5D6880" font-family="monospace">compute.py · fetch + compute</text>
+    <rect x="80" y="152" width="10" height="10" rx="3" fill="#7C5CFF"/><text x="98" y="161" font-size="12.5" fill="#5D6880" font-family="monospace">算子代码 · fetch + compute</text>
     <rect x="80" y="174" width="10" height="10" rx="3" fill="#22A87E"/><text x="98" y="183" font-size="12.5" fill="#5D6880">填 run_id 试跑一次</text>
     <rect x="200" y="82" width="70" height="22" rx="11" fill="#F1EDFF"/><text x="235" y="97" font-size="11.5" text-anchor="middle" fill="#7C5CFF">跨腔室</text>
 
     <g filter="url(#sh)"><rect x="96" y="218" width="236" height="104" rx="24" fill="url(#gCard)"/></g>
     <rect x="120" y="242" width="34" height="34" rx="11" fill="url(#gOrange)"/>
     <circle cx="137" cy="256" r="6" fill="none" stroke="#fff" stroke-width="3"/><path d="M137 262 v7" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
-    <text x="166" y="265" font-size="17" font-weight="700" fill="#1D2433">腔室绑定</text>
+    <text x="166" y="265" font-size="17" font-weight="700" fill="#1D2433">算子绑定</text>
     <text x="120" y="295" font-size="12.5" fill="#5D6880">选机台、腔室和配方</text>
     <text x="120" y="313" font-size="12.5" fill="#5D6880">勾选要计算的特征</text>
 
@@ -486,7 +486,7 @@ body.present .page { font-size: 1.06rem; }
     <div class="card">
       <div class="ico" style="background:var(--purple-soft)"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M5 12h14M12 5l7 7-7 7" fill="none" stroke="#7C5CFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       <h4>定义一次，多腔室复用</h4>
-      <p>特征包里的 fetch 按 run_id 取数，compute 只管计算。接入新腔室时，只需在腔室绑定里勾选配方和特征。</p>
+      <p>算子里的 fetch 按 run_id 取数，compute 只管计算。接入新腔室时，只需在算子绑定里选 recipe、勾选腔室。</p>
     </div>
     <div class="card">
       <div class="ico" style="background:var(--mint-soft)"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M20 7 9.5 17.5 4 12" fill="none" stroke="#22A87E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
@@ -508,14 +508,14 @@ body.present .page { font-size: 1.06rem; }
   <p class="lede">调用方通过 REST API 使用 ei-feature-service。ei-feature-service 通过 GDE SDK 注册订阅；每个执行结束后，GDE 往 Redis 写一条只含 run_id 的通知，计算引擎监听 Redis，再通过 SDK 按 run_id 拉取数据。MinIO、PostgreSQL、ClickHouse 和 Redis 都是 GDE 提供的基础能力。</p>
 
   <div class="figure">
-  <svg id="arch-svg" viewBox="0 0 880 624" role="img" aria-label="调用方通过 REST API 访问 ei-feature-service，服务内含特征管理、腔室绑定、调度管理、计算引擎；下方 GDE 数据底座提供 MinIO、PostgreSQL、任务注册、Redis 和 ClickHouse，经 GDE SDK 访问">
+  <svg id="arch-svg" viewBox="0 0 880 624" role="img" aria-label="调用方通过 REST API 访问 ei-feature-service，服务内含特征管理、算子绑定、调度管理、计算引擎；下方 GDE 数据底座提供 MinIO、PostgreSQL、任务注册、Redis 和 ClickHouse，经 GDE SDK 访问">
     <circle cx="780" cy="60" r="80" fill="#E6F8F0" opacity=".8"/>
 
     <!-- 调用方 -->
     <g filter="url(#sh)"><rect x="130" y="18" width="180" height="56" rx="18" fill="url(#gCard)"/></g>
     <circle cx="160" cy="46" r="14" fill="url(#gPurple)"/><rect x="153" y="40" width="14" height="11" rx="3" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="157" cy="45" r="1.4" fill="#fff"/><circle cx="163" cy="45" r="1.4" fill="#fff"/>
     <text x="184" y="44" font-size="14.5" font-weight="700" fill="#1D2433">Agent</text>
-    <text x="184" y="62" font-size="11" fill="#8A94AB">起草特征包</text>
+    <text x="184" y="62" font-size="11" fill="#8A94AB">起草算子</text>
 
     <g filter="url(#sh)"><rect x="350" y="18" width="180" height="56" rx="18" fill="url(#gCard)"/></g>
     <circle cx="380" cy="46" r="14" fill="url(#gOrange)"/><circle cx="380" cy="42" r="4.2" fill="#fff"/><path d="M372 54 c2 -6 14 -6 16 0" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/>
@@ -543,12 +543,12 @@ body.present .page { font-size: 1.06rem; }
     <rect x="84" y="216" width="34" height="34" rx="11" fill="url(#gPurple)"/>
     <path d="M93 225 h16 M93 233 h16 M93 241 h10" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
     <text x="84" y="274" font-size="14.5" font-weight="700" fill="#1D2433">特征管理</text>
-    <text x="84" y="293" font-size="11.5" fill="#8A94AB">上传 · 评审 · 发布 · 下线</text>
+    <text x="84" y="293" font-size="11.5" fill="#8A94AB">特征 / 算子 · 评审 · 下线</text>
 
     <g filter="url(#sh)"><rect x="257" y="198" width="172" height="106" rx="20" fill="url(#gCard)"/></g>
     <rect x="277" y="216" width="34" height="34" rx="11" fill="url(#gOrange)"/>
     <circle cx="294" cy="229" r="5.5" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M294 235 v7" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
-    <text x="277" y="274" font-size="14.5" font-weight="700" fill="#1D2433">腔室绑定</text>
+    <text x="277" y="274" font-size="14.5" font-weight="700" fill="#1D2433">算子绑定</text>
     <text x="277" y="293" font-size="11.5" fill="#8A94AB">机台 · 腔室 · 配方 → 特征</text>
 
     <g filter="url(#sh)"><rect x="451" y="198" width="172" height="106" rx="20" fill="url(#gCard)"/></g>
@@ -570,7 +570,7 @@ body.present .page { font-size: 1.06rem; }
       <line x1="480" y1="332" x2="480" y2="420" marker-end="url(#ah)"/>
       <line x1="654" y1="420" x2="654" y2="332" marker-end="url(#ah)"/>
     </g>
-    <text x="146" y="372" font-size="11" fill="#8A94AB">存取特征包</text>
+    <text x="146" y="372" font-size="11" fill="#8A94AB">存取算子文件</text>
     <text x="312" y="372" font-size="11" fill="#8A94AB">读写配置与结果</text>
     <text x="492" y="364" font-size="11" fill="#4C6FFF" font-weight="600">① 注册订阅</text>
     <text x="492" y="380" font-size="10.5" fill="#8A94AB">经 SDK</text>
@@ -588,7 +588,7 @@ body.present .page { font-size: 1.06rem; }
     <rect x="80" y="458" width="30" height="30" rx="10" fill="url(#gMinio)"/>
     <use href="#bucketIcon" transform="translate(95 473) scale(.62)"/>
     <text x="118" y="479" font-size="14" font-weight="700" fill="#1D2433">MinIO</text>
-    <text x="80" y="512" font-size="11" fill="#8A94AB">特征包文件</text>
+    <text x="80" y="512" font-size="11" fill="#8A94AB">算子文件</text>
     <text x="80" y="530" font-size="11" fill="#8A94AB">发布后只读</text>
 
     <g filter="url(#sh)"><rect x="217" y="444" width="140" height="104" rx="18" fill="url(#gCard)"/></g>
@@ -630,8 +630,8 @@ body.present .page { font-size: 1.06rem; }
   </div>
 
   <div class="mod-grid">
-    <div><b>特征管理</b><span>上传、自动检查、评审发布、下线</span></div>
-    <div><b>腔室绑定</b><span>按机台 → 腔室 → 配方选择要算的特征；规则可导入导出；审核通过后生效，保存全部修订</span></div>
+    <div><b>特征管理</b><span>特征和算子直接填 JSON / 代码，自动检查、评审发布、下线；特征里可随时新增算子，同名算子自动升版本</span></div>
+    <div><b>算子绑定</b><span>按 fleet → 腔室 → recipe → 机台 / 腔室 选择算子在哪里算；可导入导出；审核通过后生效，保存全部修订</span></div>
     <div><b>调度管理</b><span>绑定审核通过后经 SDK 注册订阅；监听 Redis 通知并分发计算；补算、重算</span></div>
     <div><b>计算引擎</b><span>调用 fetch(run_id) 经 SDK 取数、compute(data) 计算，结果写入 PostgreSQL；支持单次试跑</span></div>
   </div>
@@ -646,15 +646,15 @@ body.present .page { font-size: 1.06rem; }
   <p class="lede">所有操作都在 Web 控制台完成。控制台背后调用的是 ei-feature-service 的 REST API（接口列表见本页底部），Agent 也可以直接调用这些接口。</p>
 
   <div class="figure">
-  <svg viewBox="0 0 880 424" role="img" aria-label="五个步骤：上传特征包、评审发布、配置腔室绑定、自动调度计算、查看结果">
+  <svg viewBox="0 0 880 424" role="img" aria-label="五个步骤：新增特征和算子、评审发布、配置算子绑定、自动调度计算、查看结果">
     <circle cx="140" cy="380" r="90" fill="#FFF3E8" opacity=".7"/>
     <circle cx="770" cy="50" r="80" fill="#E6F8F0" opacity=".8"/>
 
     <g filter="url(#sh)"><rect x="20" y="20" width="260" height="172" rx="22" fill="url(#gCard)"/></g>
     <circle cx="56" cy="60" r="17" fill="url(#gPurple)"/><text x="56" y="65" font-size="14" text-anchor="middle" fill="#fff" font-weight="700">1</text>
-    <text x="84" y="58" font-size="15.5" font-weight="700" fill="#1D2433">上传特征包</text>
+    <text x="84" y="58" font-size="15.5" font-weight="700" fill="#1D2433">新增特征 / 算子</text>
     <rect x="84" y="66" width="99" height="19" rx="9.5" fill="#F1EDFF"/><text x="134" y="79" font-size="11" text-anchor="middle" fill="#7C5CFF">Agent / 工程师</text>
-    <text x="42" y="120" font-size="12.5" fill="#5D6880">上传 feature.json 和 compute.py，</text>
+    <text x="42" y="120" font-size="12.5" fill="#5D6880">填 JSON 和代码，算子可随时加，</text>
     <text x="42" y="141" font-size="12.5" fill="#5D6880">填 run_id 试跑一次看结果</text>
     <rect x="38" y="154" width="224" height="24" rx="12" fill="#E6F8F0"/><text x="52" y="170" font-size="11.5" fill="#22A87E">系统：自动检查，生成草稿</text>
 
@@ -668,11 +668,11 @@ body.present .page { font-size: 1.06rem; }
 
     <g filter="url(#sh)"><rect x="600" y="20" width="260" height="172" rx="22" fill="url(#gCard)"/></g>
     <circle cx="636" cy="60" r="17" fill="url(#gOrange)"/><text x="636" y="65" font-size="14" text-anchor="middle" fill="#fff" font-weight="700">3</text>
-    <text x="664" y="58" font-size="15.5" font-weight="700" fill="#1D2433">配置腔室绑定</text>
+    <text x="664" y="58" font-size="15.5" font-weight="700" fill="#1D2433">配置算子绑定</text>
     <rect x="664" y="66" width="99" height="19" rx="9.5" fill="#F1EDFF"/><text x="714" y="79" font-size="11" text-anchor="middle" fill="#7C5CFF">工程师 / Agent</text>
-    <text x="622" y="120" font-size="12.5" fill="#5D6880">依次选机台、腔室、配方，</text>
-    <text x="622" y="141" font-size="12.5" fill="#5D6880">勾选特征，提交审核</text>
-    <rect x="618" y="154" width="224" height="24" rx="12" fill="#E6F8F0"/><text x="632" y="170" font-size="11.5" fill="#22A87E">审核通过后注册 GDE 订阅</text>
+    <text x="622" y="120" font-size="12.5" fill="#5D6880">选 fleet、选 recipe，勾选</text>
+    <text x="622" y="141" font-size="12.5" fill="#5D6880">机台 / 腔室，提交审核</text>
+    <rect x="618" y="154" width="224" height="24" rx="12" fill="#E6F8F0"/><text x="632" y="170" font-size="11.5" fill="#22A87E">审核通过后同步 GDE 订阅</text>
 
     <g filter="url(#sh)"><rect x="20" y="232" width="550" height="172" rx="22" fill="url(#gCard)"/></g>
     <circle cx="56" cy="272" r="17" fill="url(#gBlue)"/><text x="56" y="277" font-size="14" text-anchor="middle" fill="#fff" font-weight="700">4</text>
@@ -694,7 +694,7 @@ body.present .page { font-size: 1.06rem; }
     <circle cx="636" cy="272" r="17" fill="#fff" fill-opacity=".28"/><text x="636" y="277" font-size="14" text-anchor="middle" fill="#fff" font-weight="700">5</text>
     <text x="664" y="270" font-size="15.5" font-weight="700" fill="#fff">查看结果</text>
     <rect x="664" y="278" width="47" height="19" rx="9.5" fill="#fff" fill-opacity=".25"/><text x="688" y="291" font-size="11" text-anchor="middle" fill="#fff">所有人</text>
-    <text x="622" y="332" font-size="12.5" fill="#fff" fill-opacity=".92">「结果」页按腔室、特征、</text>
+    <text x="622" y="332" font-size="12.5" fill="#fff" fill-opacity=".92">「结果」页按腔室、算子、</text>
     <text x="622" y="353" font-size="12.5" fill="#fff" fill-opacity=".92">时间筛选，点值看来源</text>
     <rect x="618" y="366" width="224" height="24" rx="12" fill="#fff" fill-opacity=".22"/><text x="632" y="382" font-size="11.5" fill="#fff">系统：下游也可通过 API 获取</text>
 
@@ -708,6 +708,7 @@ body.present .page { font-size: 1.06rem; }
   </div>
 
   <h3>控制台</h3>
+  <p class="muted">可交互的原型。「算子绑定」页已按新交互实现（fleet → 腔室 → recipe 模糊选择 → 反查机台 / 腔室）；「特征」「调度」「结果」页为简化演示，表格里一行代表一个可计算的版本，特征 + 算子的完整页面结构、接口和字段以第 4 页第 5、11 节为准。</p>
   <div class="demo" id="demo">
     <div class="demo-bar">
       <span class="dot" style="background:#FF8FA3"></span><span class="dot" style="background:#FFC98A"></span><span class="dot" style="background:#74E3BC"></span>
@@ -716,30 +717,27 @@ body.present .page { font-size: 1.06rem; }
     <div class="demo-body">
       <nav class="demo-nav">
         <button data-tab="features" class="on"><i>1·2</i>特征</button>
-        <button data-tab="bindings"><i>3</i>腔室绑定</button>
+        <button data-tab="bindings"><i>3</i>算子绑定</button>
         <button data-tab="schedule"><i>4</i>调度</button>
         <button data-tab="results"><i>5</i>结果</button>
       </nav>
       <div class="demo-main">
 
         <div class="pane on" data-pane="features">
-          <div class="pane-head"><h5>特征</h5><span>草稿 → 待评审 → 已发布 → 已下线</span><button class="btn sm plain" data-doc="features">设计说明</button><button class="btn primary" id="feat-upload">上传特征包</button></div>
+          <div class="pane-head"><h5>特征</h5><span>草稿 → 待评审 → 已发布 → 已下线</span><button class="btn sm plain" data-doc="features">设计说明</button><button class="btn primary" id="feat-upload">新增特征 / 算子</button></div>
           <div class="filter"><label>状态 <select id="ff-status"><option value="">全部</option><option value="draft">草稿</option><option value="review">待评审</option><option value="pub">已发布</option><option value="off">已下线</option></select></label><label>特征 <input id="ff-kw" placeholder="ID 或描述关键字"></label><span class="f-count" id="ff-count"></span></div>
           <div class="check" id="feat-check" hidden></div>
           <table class="dt"><thead><tr><th>特征</th><th>版本</th><th>说明</th><th>状态</th><th>提交人</th><th>评审人</th><th></th></tr></thead><tbody id="feat-rows"></tbody></table>
         </div>
 
         <div class="pane" data-pane="bindings">
-          <div class="pane-head"><h5>腔室绑定</h5><span>机台、腔室、配方由前端直接从 GDE 获取</span><button class="btn sm plain" data-doc="bindings">设计说明</button><button class="btn sm plain" id="bind-import">导入规则</button><button class="btn sm plain" id="bind-export">导出规则</button></div>
-          <div class="filter"><label>机台 <select id="bf-tool"></select></label><label>腔室 <select id="bf-chamber"></select></label><label>配方 <select id="bf-recipe"></select></label><label>特征 <select id="bf-feat"></select></label><label>状态 <select id="bf-st"><option value="">全部</option><option value="active">生效中</option><option value="pending">有待审核</option><option value="none">未绑定</option></select></label><button class="btn sm plain" id="bf-clear">清空</button><span class="f-count" id="bf-count"></span></div>
-          <table class="dt"><thead><tr><th>机台</th><th>腔室</th><th>修订</th><th>配方</th><th>特征</th><th>状态</th><th></th></tr></thead><tbody id="bind-rows"></tbody></table>
-          <div class="sub" id="bind-title" style="margin-top:14px"></div>
+          <div class="pane-head"><h5>算子绑定</h5><span>fleet、腔室、recipe 经 /api/gde 从 GDE 获取；recipe 绑到算子上</span><button class="btn sm plain" data-doc="bindings">设计说明</button></div>
           <div class="bind-grid">
-            <div id="bind-editor"></div>
-            <div><div class="sub">历史修订</div><ul class="hist" id="bind-hist"></ul></div>
+            <div><div class="sub">算子</div><ul class="hist" id="ob-ops"></ul><div class="sub" style="margin-top:10px">历史修订</div><ul class="hist" id="bind-hist"></ul></div>
+            <div><div class="sub" id="bind-title"></div><div id="bind-editor"></div></div>
           </div>
           <details class="json-box" open><summary>自动生成的绑定 JSON（只读，提交的就是它）</summary><pre id="bind-json"></pre></details>
-          <div class="form"><span class="hint" id="bind-hint"></span><button class="btn plain" id="bind-reset">撤销修改</button><button class="btn primary" id="bind-submit">提交审核</button></div>
+          <div class="form"><span class="hint" id="bind-hint"></span><button class="btn plain" id="bind-reset">撤销修改</button><button class="btn primary" id="bind-submit">提交审核</button><button class="btn" id="bind-approve" hidden>以审核人身份通过</button></div>
         </div>
 
         <div class="pane" data-pane="schedule">
@@ -776,25 +774,28 @@ body.present .page { font-size: 1.06rem; }
   <div class="table-wrap">
   <table>
   <tr><th>方法</th><th>路径</th><th>作用</th></tr>
-  <tr><td><span class="method m-post">POST</span></td><td><code>/api/features</code></td><td>上传特征包，自动检查通过后生成草稿</td></tr>
-  <tr><td><span class="method m-post">POST</span></td><td><code>/api/features/{id}/{version}/submit</code></td><td>提交评审，内容锁定</td></tr>
-  <tr><td><span class="method m-post">POST</span></td><td><code>/api/features/{id}/{version}/review</code></td><td>评审：<code>approve</code> 发布，或 <code>reject</code> 附意见退回</td></tr>
-  <tr><td><span class="method m-post">POST</span></td><td><code>/api/features/{id}/{version}/retire</code></td><td>下线：从所有腔室绑定中移除，历史值保留</td></tr>
-  <tr><td><span class="method m-post">POST</span></td><td><code>/api/features/{id}/{version}/trial</code></td><td>试跑：传 <code>run_id</code>，执行一次 fetch + compute，返回取到的数据概要和结果；不写入特征值</td></tr>
-  <tr><td><span class="method m-get">GET</span></td><td><code>/api/features</code>、<code>/api/features/{id}/{version}</code></td><td>特征列表（可按 <code>status</code>、关键字筛选）/ 详情（含代码）</td></tr>
-  <tr><td><span class="method m-post">DELETE</span></td><td><code>/api/features/{id}/{version}</code></td><td>删除草稿（仅本人）</td></tr>
-  <tr><td><span class="method m-get">GET</span></td><td><code>/api/chamber-bindings</code></td><td>绑定规则列表，可按 <code>tool</code>、<code>chamber</code>、<code>recipe</code>、<code>feature</code>、<code>status</code> 筛选</td></tr>
-  <tr><td><span class="method m-post">POST</span></td><td><code>/api/chamber-bindings/{chamber}</code></td><td>提交腔室绑定（控制台根据选择自动生成），生成待审核修订</td></tr>
-  <tr><td><span class="method m-post">POST</span></td><td><code>/api/chamber-bindings/{chamber}/revisions/{rev}/review</code></td><td>审核绑定修订：<code>approve</code> 生效并经 SDK 同步订阅，或 <code>reject</code> 附意见退回</td></tr>
-  <tr><td><span class="method m-post">POST</span></td><td><code>/api/chamber-bindings/{chamber}/revisions/{rev}/withdraw</code></td><td>提交人撤回待审核修订</td></tr>
-  <tr><td><span class="method m-get">GET</span></td><td><code>/api/chamber-bindings/export</code></td><td>导出规则：按筛选条件导出生效修订的绑定 JSON</td></tr>
-  <tr><td><span class="method m-post">POST</span></td><td><code>/api/chamber-bindings/import</code></td><td>导入规则：校验后按腔室各生成一个待审核修订；<code>dry_run=true</code> 只校验不落库</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/features</code></td><td>新增特征（直接提交 feature.json），自动检查通过后生成草稿</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/features/{id}/{version}/submit</code>、<code>/review</code></td><td>特征提交评审 / 评审（不需要试跑）；新版本发布时旧版本自动下线</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/features/{id}/{version}/retire</code></td><td>整个特征下线：已发布的算子一起下线并移出绑定，历史值保留</td></tr>
+  <tr><td><span class="method m-get">GET</span></td><td><code>/api/features</code>、<code>/api/features/{id}/{version}</code></td><td>特征列表 / 详情（含该特征的全部算子）</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/operators</code></td><td>在特征下新增算子（operator.json + 代码 + 可选文件名）；同名算子再次提交自动升版本，特征版本不变</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/operators/{fid}/{name}/{ver}/submit</code>、<code>/review</code></td><td>算子提交评审 / 评审（通过前至少试跑 1 个 run_id）</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/operators/{fid}/{name}/{ver}/trial</code></td><td>试跑：传 <code>run_id</code>，执行一次 fetch + compute，返回数据概要和结果；不写入特征值</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/operators/{fid}/{name}/{ver}/retire</code></td><td>算子下线：从绑定中移除，历史值保留</td></tr>
+  <tr><td><span class="method m-get">GET</span></td><td><code>/api/operators</code>、<code>/api/operators/{fid}/{name}/{ver}</code></td><td>算子列表 / 详情（含代码）；<code>DELETE</code> 删除本人草稿</td></tr>
+  <tr><td><span class="method m-get">GET</span></td><td><code>/api/gde/*</code></td><td>绑定页面用的 GDE 元数据：<code>fleets</code>、<code>fleets/{fleet}/chambers</code>（默认最近 1 个月）、<code>recipes?q=</code>（模糊搜索）、<code>recipes/{recipe}/chambers</code>（反查机台和腔室）</td></tr>
+  <tr><td><span class="method m-get">GET</span></td><td><code>/api/bindings</code></td><td>算子绑定列表，可按 <code>feature_id</code>、<code>operator</code>、<code>tool</code>、<code>chamber</code>、<code>recipe</code>、<code>status</code> 筛选</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/bindings/{feature_id}/{operator}</code></td><td>提交算子绑定（控制台根据选择自动生成），生成待审核修订</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/bindings/{feature_id}/{operator}/revisions/{rev}/review</code></td><td>审核绑定修订：<code>approve</code> 生效并同步腔室订阅，或 <code>reject</code> 附意见退回</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/bindings/{feature_id}/{operator}/revisions/{rev}/withdraw</code></td><td>提交人撤回待审核修订</td></tr>
+  <tr><td><span class="method m-get">GET</span></td><td><code>/api/bindings/export</code></td><td>导出：按筛选条件导出生效修订的绑定 JSON</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/bindings/import</code></td><td>导入：校验后按算子各生成一个待审核修订；<code>dry_run=true</code> 只校验不落库</td></tr>
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/schedules/{chamber}/pause</code>、<code>/resume</code></td><td>暂停或恢复该腔室的计算（经 SDK 暂停 / 恢复订阅）</td></tr>
-  <tr><td><span class="method m-post">POST</span></td><td><code>/api/batches</code></td><td>按腔室、特征、时间范围补算（<code>fill</code>）或重算（<code>overwrite</code>）</td></tr>
-  <tr><td><span class="method m-get">GET</span></td><td><code>/api/values</code></td><td>按机台、腔室、配方、特征、晶圆、时间查询特征值</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/batches</code></td><td>按腔室、算子、时间范围补算（<code>fill</code>）或重算（<code>overwrite</code>）</td></tr>
+  <tr><td><span class="method m-get">GET</span></td><td><code>/api/values</code></td><td>按算子引用，以及机台、腔室、recipe、晶圆、时间查询特征值</td></tr>
   <tr><td><span class="method m-get">GET</span></td><td><code>/api/batches</code>、<code>/api/batches/{batch_id}</code></td><td>批次列表 / 某个计算批次的来源信息</td></tr>
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/batches/{batch_id}/cancel</code></td><td>取消排队中或进行中的补算、重算</td></tr>
-  <tr><td><span class="method m-get">GET</span></td><td><code>/api/schedules</code></td><td>各腔室的订阅、生效修订、处理进度</td></tr>
+  <tr><td><span class="method m-get">GET</span></td><td><code>/api/schedules</code></td><td>各腔室的订阅范围、同步状态、算子数、处理进度</td></tr>
   <tr><td><span class="method m-mq">REDIS</span></td><td><code>gde:run:done</code></td><td>计算引擎以消费组监听的执行结束通知：含 run_id、机台、腔室、配方、晶圆、结束时间，不含数据</td></tr>
   </table>
   </div>
@@ -819,7 +820,7 @@ body.present .page { font-size: 1.06rem; }
     <tr><td>测试</td><td>pytest + pytest-asyncio + httpx + fakeredis</td></tr>
     <tr><td>前端</td><td>单独的仓库，不放在本仓库；页面规格见第 11 节</td></tr>
   </table></div>
-  <p><strong>运行：</strong>在根目录执行 <code>uv sync</code> 后 <code>uv run main.py</code>。一个进程同时提供 REST API 和后台计算（监听 Redis、补算重算、实时批次收尾、补做 SDK 调用），不需要 Dockerfile，也不需要单独的 worker 进程。启动时依次：读 <code>config/config.json</code> → 执行 <code>src/model/schema.sql</code>（全部 <code>IF NOT EXISTS</code>，重复执行无副作用）→ 启动后台任务 → 启动 uvicorn。多实例部署时直接多起几个，消费组和 <code>FOR UPDATE SKIP LOCKED</code> 保证不重复处理。</p>
+  <p><strong>运行：</strong>在根目录执行 <code>uv sync</code> 后 <code>uv run main.py</code>。一个进程同时提供 REST API 和后台计算（监听 Redis、补算重算、实时批次收尾、同步腔室订阅），不需要 Dockerfile，也不需要单独的 worker 进程。启动时依次：读 <code>config/config.json</code> → 执行 <code>src/model/schema.sql</code>（全部 <code>IF NOT EXISTS</code>，重复执行无副作用）→ 启动后台任务 → 启动 uvicorn。多实例部署时直接多起几个，消费组和 <code>FOR UPDATE SKIP LOCKED</code> 保证不重复处理。</p>
 
   <h3>2. 代码仓目录</h3>
 <pre><code>ei-feature-service/
@@ -832,12 +833,16 @@ body.present .page { font-size: 1.06rem; }
 │   └── config.json        <span class="c"># 唯一的配置文件（第 3 节）</span>
 ├── src/
 │   ├── api/               <span class="c"># 路由：一个领域一个文件，只做参数解析和调用 service</span>
-│   │   ├── features.py  bindings.py  schedules.py  batches.py  values.py
+│   │   ├── features.py  operators.py  bindings.py  gde.py  schedules.py  batches.py  values.py
 │   │   └── schemas.py     <span class="c"># 全部 Pydantic 请求 / 响应模型（第 5 节）</span>
 │   ├── service/           <span class="c"># 业务逻辑和事务</span>
-│   │   ├── feature.py     <span class="c"># 上传、评审、下线、试跑</span>
-│   │   ├── package.py     <span class="c"># 特征包校验（第 7 节）</span>
-│   │   ├── binding.py     <span class="c"># 提交、审核、撤回、导入导出、校验</span>
+│   │   ├── feature.py     <span class="c"># 特征：新增、评审、下线（整体下线时带下算子）</span>
+│   │   ├── operator.py    <span class="c"># 算子：新增 / 新版本、评审、下线、试跑</span>
+│   │   ├── review.py      <span class="c"># 特征和算子共用的状态流转</span>
+│   │   ├── refs.py        <span class="c"># 算子引用 feature_id/operator@version 的解析</span>
+│   │   ├── package.py     <span class="c"># feature.json / operator.json / 代码校验（第 7 节）</span>
+│   │   ├── binding.py     <span class="c"># 算子绑定：提交、审核、撤回、导入导出、校验</span>
+│   │   ├── subscription.py <span class="c"># 腔室订阅范围重算与 GDE 同步</span>
 │   │   ├── schedule.py    <span class="c"># 订阅状态、暂停恢复</span>
 │   │   ├── batch.py       <span class="c"># 创建、查询、取消批次</span>
 │   │   └── value.py       <span class="c"># 查询特征值</span>
@@ -845,29 +850,29 @@ body.present .page { font-size: 1.06rem; }
 │   │   ├── sandbox.py     <span class="c"># 子进程里执行 fetch + compute，返回 RunResult</span>
 │   │   ├── live.py        <span class="c"># 监听 gde:run:done</span>
 │   │   ├── batch_runner.py <span class="c"># 执行补算 / 重算</span>
-│   │   ├── jobs.py        <span class="c"># 实时批次收尾、gde_outbox 重试（定时任务）</span>
+│   │   ├── jobs.py        <span class="c"># 实时批次收尾、腔室订阅同步（定时任务）</span>
 │   │   └── writer.py      <span class="c"># 写 feature_value、维护批次计数</span>
 │   ├── model/
-│   │   ├── tables.py      <span class="c"># SQLAlchemy ORM，六张表</span>
+│   │   ├── tables.py      <span class="c"># SQLAlchemy ORM，七张表</span>
 │   │   └── schema.sql     <span class="c"># 建表与索引（全部 IF NOT EXISTS）</span>
-│   ├── eifeature/         <span class="c"># 特征包运行库：gde、ops、Series、Skip（第 7 节）</span>
+│   ├── eifeature/         <span class="c"># 算子运行库：gde、ops、Series、Skip（第 7 节）</span>
 │   └── util/              <span class="c"># 与业务无关、可复用的部分</span>
 │       ├── config.py      <span class="c"># 读 config.json，以及第 3 节的代码常量</span>
 │       ├── db.py          <span class="c"># engine、session、事务、advisory lock</span>
 │       ├── errors.py      <span class="c"># AppError、错误码、FastAPI 异常处理</span>
 │       ├── auth.py        <span class="c"># 从 X-User 取当前用户</span>
 │       ├── gde.py         <span class="c"># GdeClient 协议、SdkGdeClient、FakeGdeClient（第 8 节）</span>
-│       ├── storage.py     <span class="c"># MinIO / 本地目录读写特征包、本地缓存、sha256 校验</span>
+│       ├── storage.py     <span class="c"># MinIO / 本地目录读写算子文件、本地缓存、sha256 校验</span>
 │       ├── stream.py      <span class="c"># Redis Stream 读取、确认、认领</span>
 │       ├── limits.py      <span class="c"># 信号量、熔断器</span>
 │       ├── semver.py      <span class="c"># 版本号解析与比较</span>
 │       └── timeutil.py    <span class="c"># 时区、整点、日期区间</span>
 └── test/
     ├── conftest.py        <span class="c"># 公共夹具</span>
-    ├── fixtures/          <span class="c"># 示例特征包 gas_flow_diffmean（feature.json + compute.py）</span>
+    ├── fixtures/          <span class="c"># 示例 gas_flow_diffmean：feature.json + operator.json + compute.py</span>
     ├── unit/              <span class="c"># 不依赖外部服务（沙箱测试会起子进程）</span>
     └── integration/       <span class="c"># 需要 PostgreSQL，连接取 config.json 的 database.url</span></code></pre>
-  <p class="muted">导入统一写 <code>from src.util.config import settings</code> 这种形式；根目录即工作目录，pytest 设 <code>pythonpath = ["."]</code>。特征包里写的是 <code>from eifeature import …</code>，沙箱子进程启动时执行 <code>sys.modules["eifeature"] = src.eifeature</code> 让它可以导入。</p>
+  <p class="muted">导入统一写 <code>from src.util.config import settings</code> 这种形式；根目录即工作目录，pytest 设 <code>pythonpath = ["."]</code>。算子代码里写的是 <code>from eifeature import …</code>，沙箱子进程启动时执行 <code>sys.modules["eifeature"] = src.eifeature</code> 让它可以导入。</p>
 
   <div class="cols">
   <div>
@@ -882,7 +887,7 @@ dependencies = [
     <span class="s">"sqlalchemy==2.0.51"</span>,
     <span class="s">"psycopg[binary]==3.3.4"</span>,
     <span class="s">"pydantic==2.13.4"</span>,
-    <span class="s">"python-multipart==0.0.32"</span>,
+    <span class="s">"python-multipart==0.0.32"</span>,     <span class="c"># 已不再上传文件，保留无害</span>
     <span class="s">"redis==7.1.0"</span>,
     <span class="s">"minio==7.2.20"</span>,
     <span class="s">"pebble==5.2.3"</span>,
@@ -913,7 +918,7 @@ asyncio_mode = <span class="s">"auto"</span></code></pre>
 <span class="k">from</span> fastapi <span class="k">import</span> FastAPI
 <span class="k">from</span> src.util.config <span class="k">import</span> settings
 <span class="k">from</span> src.util <span class="k">import</span> db, errors
-<span class="k">from</span> src.api <span class="k">import</span> features, bindings, schedules, batches, values
+<span class="k">from</span> src.api <span class="k">import</span> features, operators, bindings, gde, schedules, batches, values
 <span class="k">from</span> src <span class="k">import</span> engine
 
 @asynccontextmanager
@@ -925,7 +930,7 @@ asyncio_mode = <span class="s">"auto"</span></code></pre>
 
 app = FastAPI(title=<span class="s">"ei-feature-service"</span>, lifespan=lifespan)
 errors.install(app)
-<span class="k">for</span> m <span class="k">in</span> (features, bindings, schedules, batches, values):
+<span class="k">for</span> m <span class="k">in</span> (features, operators, bindings, gde, schedules, batches, values):
     app.include_router(m.router, prefix=<span class="s">"/api"</span>)
 
 <span class="k">if</span> __name__ == <span class="s">"__main__"</span>:
@@ -952,7 +957,7 @@ uv run pytest     <span class="c"># 测试</span></code></pre>
   <ul>
     <li><code>src/util/config.py</code> 用 Pydantic 模型读取并校验这个文件，模块级单例 <code>settings</code>；缺字段或类型错误时启动直接报错退出。</li>
     <li><code>gde.fake=true</code> 时用内存版 <code>FakeGdeClient</code>（本地开发、测试）；<code>gde.sdk</code> 原样传给 GDE SDK 的初始化函数。</li>
-    <li><code>minio.endpoint</code> 写成 <code>file://./data/packages</code> 时改用本地目录存特征包（相对路径基于项目根目录），本地开发不必启动 MinIO。</li>
+    <li><code>minio.endpoint</code> 写成 <code>file://./data/packages</code> 时改用本地目录存算子文件（相对路径基于项目根目录），本地开发不必启动 MinIO。</li>
     <li><code>server</code> 可省略，默认 <code>0.0.0.0:8000</code>。</li>
   </ul>
   <p>其余参数都是 <code>src/util/config.py</code> 里的常量，不放进配置文件：</p>
@@ -967,159 +972,191 @@ uv run pytest     <span class="c"># 测试</span></code></pre>
     <tr><td><code>BREAKER_FAILURES</code> / <code>BREAKER_PAUSE_S</code></td><td>5 / 60</td><td>连续 N 次 GDE 不可用后暂停取数的秒数</td></tr>
     <tr><td><code>BATCH_MAX_DAYS</code></td><td>31</td><td>补算 / 重算单次最大天数</td></tr>
     <tr><td><code>TZ</code></td><td><code>Asia/Shanghai</code></td><td>日期参数、实时批次整点的时区</td></tr>
-    <tr><td><code>PACKAGE_CACHE_DIR</code></td><td><code>/tmp/ei-feature/pkgs</code></td><td>特征包本地缓存</td></tr>
+    <tr><td><code>PACKAGE_CACHE_DIR</code></td><td><code>/tmp/ei-feature/pkgs</code></td><td>算子文件本地缓存</td></tr>
   </table></div>
 
   <h3>4. 接口通用约定</h3>
   <ul>
-    <li>前缀 <code>/api</code>，请求、响应都是 JSON（上传特征包除外）。时间一律 ISO 8601 带时区；日期参数为 <code>YYYY-MM-DD</code>，按 <code>TZ</code> 解释，<code>to</code> 包含当天。</li>
+    <li>前缀 <code>/api</code>，请求、响应都是 JSON（特征、算子也直接提交 JSON，不再上传文件）。时间一律 ISO 8601 带时区；日期参数为 <code>YYYY-MM-DD</code>，按 <code>TZ</code> 解释，<code>to</code> / <code>end</code> 包含当天。</li>
     <li><strong>用户：</strong>网关注入请求头 <code>X-User</code>（工号）。所有写接口必需，缺失返回 401。保留用户名 <code>system</code> 只能由服务自己使用。</li>
     <li><strong>列表：</strong>参数 <code>page</code>（从 1 开始）、<code>page_size</code>（默认 20，最大 200；<code>/api/values</code> 最大 1000），响应 <code>{"items": [...], "total": 123, "page": 1, "page_size": 20}</code>。</li>
     <li><strong>错误：</strong>响应体 <code>{"code": "BINDING_INVALID", "message": "人能看懂的说明", "details": {...}}</code>。</li>
-    <li><strong>特征引用：</strong>字符串 <code>"{feature_id}@{version}"</code>，如 <code>gas_flow_diffmean@1.0.0</code>。</li>
+    <li><strong>特征引用：</strong><code>"{feature_id}@{version}"</code>，如 <code>gas_flow_diffmean@1.0.0</code>（特征版本是语义化版本）。</li>
+    <li><strong>算子引用：</strong><code>"{feature_id}/{operator}@{version}"</code>，如 <code>gas_flow_diffmean/diffmean@2</code>（算子版本是从 1 开始的整数）。绑定、批次、特征值都按算子引用。</li>
   </ul>
   <div class="table-wrap"><table class="nowrap-first">
     <tr><th>错误码</th><th>HTTP</th><th>场景</th></tr>
     <tr><td><code>UNAUTHENTICATED</code></td><td>401</td><td>缺少 <code>X-User</code></td></tr>
-    <tr><td><code>FORBIDDEN</code></td><td>403</td><td>评审 / 审核人与提交人相同；撤回别人的修订</td></tr>
-    <tr><td><code>NOT_FOUND</code></td><td>404</td><td>特征、修订、批次不存在</td></tr>
-    <tr><td><code>INVALID_STATE</code></td><td>409</td><td>当前状态不允许该操作（details 带 <code>status</code>）</td></tr>
-    <tr><td><code>VERSION_EXISTS</code> / <code>VERSION_NOT_INCREASING</code></td><td>409</td><td>版本已存在；新版本不大于已有最大版本</td></tr>
-    <tr><td><code>PENDING_EXISTS</code></td><td>409</td><td>该腔室已有待审核修订</td></tr>
+    <tr><td><code>FORBIDDEN</code></td><td>403</td><td>评审 / 审核人与提交人相同；撤回别人的修订；删除别人的草稿</td></tr>
+    <tr><td><code>NOT_FOUND</code></td><td>404</td><td>特征、算子、修订、批次、run_id、fleet、recipe 不存在</td></tr>
+    <tr><td><code>INVALID_STATE</code></td><td>409</td><td>当前状态不允许该操作（details 带 <code>status</code>）；如特征未发布时发布算子（<code>status=unpublished</code>）、特征已整体下线后再加算子</td></tr>
+    <tr><td><code>VERSION_EXISTS</code> / <code>VERSION_NOT_INCREASING</code></td><td>409</td><td>特征版本已存在；新版本不大于已有最大版本</td></tr>
+    <tr><td><code>CODE_FILE_EXISTS</code></td><td>409</td><td>同一特征下已有同名的算子代码文件</td></tr>
+    <tr><td><code>PENDING_EXISTS</code></td><td>409</td><td>该算子已有待审核的绑定修订</td></tr>
     <tr><td><code>NO_CHANGE</code></td><td>409</td><td>提交内容与生效修订相同</td></tr>
-    <tr><td><code>PACKAGE_INVALID</code></td><td>422</td><td>特征包校验失败，<code>details.errors: [{"file", "line", "message"}]</code></td></tr>
-    <tr><td><code>BINDING_INVALID</code></td><td>422</td><td>绑定校验失败，<code>details.errors: [{"path", "message"}]</code>，path 如 <code>rules[1].recipes[0]</code></td></tr>
-    <tr><td><code>VALIDATION_ERROR</code></td><td>422</td><td>其他参数错误（Pydantic）</td></tr>
-    <tr><td><code>TRIAL_REQUIRED</code></td><td>422</td><td>评审通过时 <code>trial_runs</code> 为空</td></tr>
-    <tr><td><code>GDE_UNAVAILABLE</code></td><td>502</td><td>调用 GDE SDK 失败；本次操作不落库</td></tr>
+    <tr><td><code>SPEC_INVALID</code></td><td>422</td><td>feature.json / operator.json / 代码校验失败，<code>details.errors: [{"file", "line", "message"}]</code>；file 为 <code>feature.json</code>、<code>operator.json</code>、<code>code_file</code> 或代码文件名</td></tr>
+    <tr><td><code>BINDING_INVALID</code></td><td>422</td><td>绑定校验失败，<code>details.errors: [{"path", "message"}]</code>，path 如 <code>recipes[1].chambers[0]</code></td></tr>
+    <tr><td><code>VALIDATION_ERROR</code></td><td>422</td><td>其他参数错误（Pydantic），包括算子引用格式不对</td></tr>
+    <tr><td><code>TRIAL_REQUIRED</code></td><td>422</td><td>算子评审通过时 <code>trial_runs</code> 为空</td></tr>
+    <tr><td><code>GDE_UNAVAILABLE</code></td><td>502</td><td>同步调用 GDE 失败（试跑、绑定校验、元数据转发、暂停 / 恢复）；本次操作不落库</td></tr>
   </table></div>
 
   <h3>5. 接口定义</h3>
   <p class="muted">下面用 Python 类型写模型，字段名即 JSON 字段名；<code>?</code> 表示可为 null 或可省略。</p>
 <div class="file">schemas（共用模型）</div>
-<pre><code><span class="k">class</span> Feature:
-    feature_id: str; version: str
+<pre><code><span class="k">class</span> ReviewEntry:
+    decision: Literal[<span class="s">"approve"</span>, <span class="s">"reject"</span>]; reviewer: str; comment: str?
+    trial_runs: list[str]; at: datetime
+
+<span class="k">class</span> Reviewed:                         <span class="c"># 特征、算子共用</span>
     status: Literal[<span class="s">"draft"</span>, <span class="s">"review"</span>, <span class="s">"published"</span>, <span class="s">"retired"</span>]
-    description: str; unit: str?          <span class="c"># 取自 spec.desc、spec.output.unit</span>
-    spec: dict; package_hash: str
+    spec: dict; description: str          <span class="c"># description 取自 spec.desc</span>
     created_by: str; created_at: datetime; submitted_at: datetime?
     published_by: str?; published_at: datetime?
     retired_by: str?; retired_at: datetime?; retire_reason: str?
     review_log: list[ReviewEntry]
 
-<span class="k">class</span> ReviewEntry:
-    decision: Literal[<span class="s">"approve"</span>, <span class="s">"reject"</span>]; reviewer: str; comment: str?
-    trial_runs: list[str]; at: datetime
+<span class="k">class</span> Feature(Reviewed):
+    feature_id: str; version: str         <span class="c"># 语义化版本 1.0.0</span>
+    unit: str?                            <span class="c"># 取自 spec.output.unit</span>
 
-<span class="k">class</span> Rule:
-    recipes: list[str]                    <span class="c"># 至少 1 个</span>
-    features: dict[str, str]              <span class="c"># feature_id -&gt; version，至少 1 个</span>
+<span class="k">class</span> Operator(Reviewed):
+    feature_id: str; name: str; version: int     <span class="c"># 同名算子再次提交时 +1</span>
+    code_file: str; code_hash: str
+    ref: str                              <span class="c"># feature_id/name@version</span>
 
-<span class="k">class</span> BindingSpec:
-    tool: str; chamber: str; rules: list[Rule]
+<span class="k">class</span> BindingSpec:                      <span class="c"># 一个算子的绑定内容</span>
+    feature_id: str; operator: str; version: int  <span class="c"># 绑定的算子版本</span>
+    fleet: {name: str, start: date, end: date}?   <span class="c"># 选腔室时用的 fleet 与时间范围，只用于回显</span>
+    recipes: list[{recipe: str, chambers: list[{tool: str, chamber: str}]}]
 
 <span class="k">class</span> Revision:
-    chamber: str; revision: int; tool: str; spec: BindingSpec
+    feature_id: str; operator: str; revision: int; version: int; spec: BindingSpec
     status: Literal[<span class="s">"pending"</span>, <span class="s">"active"</span>, <span class="s">"rejected"</span>, <span class="s">"withdrawn"</span>, <span class="s">"superseded"</span>]
     source: Literal[<span class="s">"console"</span>, <span class="s">"api"</span>, <span class="s">"import"</span>, <span class="s">"system"</span>]
-    base_revision: int?; gde_sub_id: str?
+    base_revision: int?
     created_by: str; created_at: datetime
     reviewed_by: str?; reviewed_at: datetime?; review_note: str?; superseded_at: datetime?
+
+<span class="k">class</span> Affected:                         <span class="c"># 算子下线影响的绑定</span>
+    feature_id: str; operator: str; version: int
+    new_revision: int?                    <span class="c"># 生成的空 system 修订；只撤回了待审核修订时为 null</span>
+    chambers: list[str]                   <span class="c"># 不再计算该算子的腔室</span>
 
 <span class="k">class</span> Batch:
     batch_id: int; mode: Literal[<span class="s">"live"</span>, <span class="s">"fill"</span>, <span class="s">"overwrite"</span>]
     status: Literal[<span class="s">"queued"</span>, <span class="s">"running"</span>, <span class="s">"done"</span>, <span class="s">"failed"</span>, <span class="s">"cancelled"</span>]
-    chamber: str; binding_revision: int; features: list[str]?
+    chamber: str; operators: list[str]?   <span class="c"># 算子引用；live 为 null 表示全部</span>
+    plan: dict[str, list[str]]?           <span class="c"># 创建时快照 {recipe: [算子引用]}；live 为 null</span>
     data_from: datetime; data_to: datetime; reason: str?; superseded_by: int?
     run_total: int; value_ok: int; value_null: int; error: str?
     created_by: str; created_at: datetime; started_at: datetime?; finished_at: datetime?
 
 <span class="k">class</span> Value:
-    feature_id: str; version: str; run_id: str
+    feature_id: str; operator: str; version: int; run_id: str
     tool: str; chamber: str; recipe: str; lot: str?; wafer: str?; run_end_at: datetime
     value: float?; reason: str?; reason_detail: str?; batch_id: int; computed_at: datetime
-    retired: bool                         <span class="c"># 由 feature.status == "retired" 得出</span></code></pre>
+    retired: bool                         <span class="c"># 由 operator.status == "retired" 得出</span></code></pre>
 
   <div class="table-wrap"><table>
     <tr><th>接口</th><th>请求</th><th>响应与规则</th></tr>
-    <tr><td><span class="method m-post">POST</span> <code>/api/features</code></td><td><code>multipart/form-data</code>：<code>spec</code>=feature.json 文件，<code>code</code>=compute.py 文件</td><td>201 <code>Feature</code>（status=draft，created_by=X-User）。按第 7 节校验；先写 MinIO 再插库，插库失败时删除已写对象。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>/api/features</code></td><td>body 即 feature.json：<code>{"id", "version", "desc", "output": {"unit"}?}</code></td><td>201 <code>Feature</code>（draft，created_by=X-User）。按第 7 节校验；(id, version) 已存在 → <code>VERSION_EXISTS</code>；不大于已有最大版本 → <code>VERSION_NOT_INCREASING</code>。</td></tr>
     <tr><td><span class="method m-get">GET</span> <code>/api/features</code></td><td><code>status?</code> <code>q?</code>（匹配 id 或 desc，ILIKE）<code>feature_id?</code> <code>page</code> <code>page_size</code></td><td>列表 <code>Feature</code>，按 feature_id、版本（语义化排序）降序。</td></tr>
-    <tr><td><span class="method m-get">GET</span> <code>/api/features/{id}/{version}</code></td><td>—</td><td><code>Feature</code> + <code>code: str</code>（compute.py 内容）。</td></tr>
-    <tr><td><span class="method m-post">POST</span> <code>…/{version}/submit</code></td><td>—</td><td>仅 draft、仅 created_by 本人。→ review，写 submitted_at。返回 <code>Feature</code>。</td></tr>
-    <tr><td><span class="method m-post">POST</span> <code>…/{version}/review</code></td><td><code>{"decision": "approve"|"reject", "comment": str?, "trial_runs": [str]}</code></td><td>仅 review；reviewer ≠ created_by（403）。approve 要求 trial_runs 非空（422 <code>TRIAL_REQUIRED</code>）→ published，写 published_by/at；reject 要求 comment 非空 → draft。两种都向 review_log 追加一条。</td></tr>
-    <tr><td><span class="method m-post">POST</span> <code>…/{version}/retire</code></td><td><code>{"reason": str}</code></td><td>仅 published。在一个事务里执行第 6 节“下线”步骤。返回 <code>{"feature": Feature, "affected": [{"chamber", "new_revision", "subscription": "kept"|"cancelled"}]}</code>。</td></tr>
-    <tr><td><span class="method m-post">POST</span> <code>…/{version}/trial</code></td><td><code>{"run_id": str}</code></td><td>draft / review / published 可用。在沙箱执行一次，不写库。返回 <code>{"run": {"run_id","tool","chamber","recipe","lot","wafer","end_at"}, "data_summary": {key: {"points": int, "t_min": float, "t_max": float}}, "value": float?, "reason": str?, "reason_detail": str?, "fetch_ms": int, "compute_ms": int}</code>。data_summary 只对 fetch 返回值中形如 <code>{"t": [...], "v": [...]}</code> 的顶层键生成。</td></tr>
-    <tr><td><span class="method m-get">GET</span> <code>/api/chamber-bindings</code></td><td><code>tool?</code> <code>chamber?</code> <code>recipe?</code> <code>feature?</code>（id 或 id@version）<code>status?</code>（active / pending）</td><td><code>{"items": [{"tool", "chamber", "active": Revision?, "pending": Revision?}]}</code>，不分页。recipe、feature 通过 <code>binding_item</code> 过滤生效修订。“未绑定”腔室后端不知道，由前端用 GDE 元数据补齐。</td></tr>
-    <tr><td><span class="method m-get">GET</span> <code>/api/chamber-bindings/{chamber}</code></td><td><code>revision?</code></td><td>不带 revision：<code>{"chamber", "revisions": [Revision]}</code>，新的在前；带 revision：单个 <code>Revision</code>。</td></tr>
-    <tr><td><span class="method m-post">POST</span> <code>/api/chamber-bindings/{chamber}</code></td><td><code>BindingSpec</code> + <code>base_revision?</code></td><td>201 <code>Revision</code>（pending，source=console 或 api：请求头 <code>X-Client: console</code> 时为 console）。按第 6 节“绑定校验”；路径 chamber 必须等于 body.chamber。recipes 按 GDE 返回的顺序保存。</td></tr>
-    <tr><td><span class="method m-post">POST</span> <code>…/revisions/{rev}/review</code></td><td><code>{"decision": "approve"|"reject", "comment": str?}</code></td><td>仅 pending；审核人 ≠ created_by。reject 需 comment → rejected。approve 见第 6 节“绑定生效”。返回 <code>Revision</code>。</td></tr>
-    <tr><td><span class="method m-post">POST</span> <code>…/revisions/{rev}/withdraw</code></td><td>—</td><td>仅 pending、仅 created_by 本人 → withdrawn。</td></tr>
-    <tr><td><span class="method m-get">GET</span> <code>/api/chamber-bindings/export</code></td><td>同列表筛选参数</td><td>导出文件（<code>Content-Disposition: attachment; filename=ei-feature-service-bindings.json</code>）：<code>{"format": "ei-feature-service.bindings/v1", "exported_at", "bindings": [{"tool","chamber","revision","rules"}]}</code>，只含生效修订。</td></tr>
-    <tr><td><span class="method m-post">POST</span> <code>/api/chamber-bindings/import</code></td><td><code>dry_run</code>（默认 true）；body 为导出格式</td><td><code>{"items": [{"tool","chamber","action": "new"|"skip"|"conflict"|"error","message","revision"?, "errors"?}]}</code>。每个腔室独立按“绑定校验”判断：有待审核 → conflict；与生效修订一致 → skip；文件内同一腔室重复 → error。<code>dry_run=false</code> 时在一个事务里为所有 new 插入 pending 修订（source=import，base_revision=当前生效修订号）；有 error 时也只导入 new 的部分。</td></tr>
-    <tr><td><span class="method m-get">GET</span> <code>/api/schedules</code></td><td><code>tool?</code> <code>chamber?</code></td><td><code>[{"tool","chamber","gde_sub_id","binding_revision","feature_count","status": "running"|"paused"|"cancelled"|"unknown","progress": datetime?}]</code>。status 经 SDK 查询（失败时为 unknown，不报错）；progress = 该腔室最近一个 live 批次中最大的 run_end_at。</td></tr>
-    <tr><td><span class="method m-post">POST</span> <code>/api/schedules/{chamber}/pause</code>、<code>/resume</code></td><td>—</td><td>调 SDK 暂停 / 恢复生效修订上的 gde_sub_id。无订阅 → 409 <code>INVALID_STATE</code>。</td></tr>
-    <tr><td><span class="method m-post">POST</span> <code>/api/batches</code></td><td><code>{"chamber", "mode": "fill"|"overwrite", "features": [str], "from": date, "to": date, "reason": str}</code></td><td>201 <code>Batch</code>（queued）。features 必须都在该腔室生效修订中；from ≤ to ≤ 今天；天数 ≤ <code>BATCH_MAX_DAYS</code>；reason 必填。binding_revision 取当前生效修订。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/features/{id}/{version}</code></td><td>—</td><td><code>Feature</code> + <code>operators: [Operator]</code>（该 feature_id 下全部算子、全部版本，按名称、版本降序）。</td></tr>
+    <tr><td><span class="method m-post">DELETE</span> <code>/api/features/{id}/{version}</code></td><td>—</td><td>204。仅 draft、仅 created_by 本人。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>…/{version}/submit</code></td><td>—</td><td>仅 draft、仅本人 → review。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>…/{version}/review</code></td><td><code>{"decision", "comment"?}</code></td><td>仅 review；评审人 ≠ created_by。<b>特征评审不需要试跑</b>。approve → published，同一 feature_id 原来的 published 版本在同一事务里 → retired（retire_reason=“被 {version} 替代”，其算子不受影响）；reject 要求 comment → draft。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>…/{version}/retire</code></td><td><code>{"reason": str}</code></td><td>仅 published。表示整个特征下线：该版本 → retired，该 feature_id 下全部 published 算子按第 6 节“算子下线”一并下线。返回 <code>{"feature": Feature, "operators": [算子引用], "affected": [Affected]}</code>。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>/api/operators</code></td><td><code>{"feature_id", "spec": operator.json, "code": str, "code_file"?: str}</code></td><td>201 <code>Operator</code>（draft）。feature_id 不存在 → 404；该特征所有版本都已下线 → 409 <code>INVALID_STATE</code>。version = 同名算子已有最大版本 + 1（没有则 1），<b>特征版本不变</b>。code_file 不填时为 <code>{name}_v{version}.py</code>；同一 feature_id 内重复 → <code>CODE_FILE_EXISTS</code>。先写 MinIO 再插库，插库失败时删除已写对象。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/operators</code></td><td><code>feature_id?</code> <code>name?</code> <code>status?</code> <code>q?</code>（匹配算子名或 desc）<code>page</code> <code>page_size</code></td><td>列表 <code>Operator</code>，按 feature_id、名称、版本降序。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/operators/{feature_id}/{name}/{version}</code></td><td>—</td><td><code>Operator</code> + <code>code: str</code>。</td></tr>
+    <tr><td><span class="method m-post">DELETE</span> <code>/api/operators/{…}/{version}</code></td><td>—</td><td>204。仅 draft、仅本人，同时删除 MinIO 对象。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>…/{version}/submit</code></td><td>—</td><td>仅 draft、仅本人 → review。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>…/{version}/review</code></td><td><code>{"decision", "comment"?, "trial_runs": [str]}</code></td><td>仅 review；评审人 ≠ created_by。approve 要求 trial_runs 非空（<code>TRIAL_REQUIRED</code>），且该 feature_id 有 published 版本（否则 409 <code>INVALID_STATE</code>，status=unpublished）→ published；reject 要求 comment → draft。都追加 review_log。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>…/{version}/retire</code></td><td><code>{"reason": str}</code></td><td>仅 published。按第 6 节“算子下线”。返回 <code>{"operator": Operator, "affected": [Affected]}</code>。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>…/{version}/trial</code></td><td><code>{"run_id": str}</code></td><td>draft / review / published 可用。在沙箱执行一次，不写库。返回 <code>{"run": {"run_id","tool","chamber","recipe","lot","wafer","end_at"}, "data_summary": {key: {"points", "t_min", "t_max"}}, "value"?, "reason"?, "reason_detail"?, "fetch_ms", "compute_ms"}</code>。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/gde/fleets</code></td><td>—</td><td><code>[str]</code>，转发 GDE。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/gde/fleets/{fleet}/chambers</code></td><td><code>start?</code> <code>end?</code>（默认 end=今天、start=end−30 天）</td><td><code>[{"tool", "chamber"}]</code>：fleet 下在该时间范围内有执行的腔室。fleet 不存在 → 404。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/gde/recipes</code></td><td><code>q?</code>（不区分大小写的子串匹配）<code>limit?</code>（默认 50，最大 1000）</td><td><code>[str]</code>：全部 recipe 过滤后取前 limit 个，供下拉框边输入边过滤。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/gde/recipes/{recipe}/chambers</code></td><td>—</td><td><code>[{"tool", "chamber"}]</code>：跑过该 recipe 的全部机台、腔室（反查）。recipe 不存在 → 404。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/bindings</code></td><td><code>feature_id?</code> <code>operator?</code> <code>tool?</code> <code>chamber?</code> <code>recipe?</code> <code>status?</code>（active / pending）</td><td><code>{"items": [{"feature_id", "operator", "active": Revision?, "pending": Revision?}]}</code>，不分页。tool、chamber、recipe 通过 <code>binding_item</code> 过滤生效修订。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/bindings/{feature_id}/{operator}</code></td><td><code>revision?</code></td><td>不带 revision：<code>{"feature_id", "operator", "revisions": [Revision]}</code>，新的在前；带 revision：单个 <code>Revision</code>。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>/api/bindings/{feature_id}/{operator}</code></td><td><code>BindingSpec</code> + <code>base_revision?</code></td><td>201 <code>Revision</code>（pending；请求头 <code>X-Client: console</code> 时 source=console，否则 api）。路径必须与 body 的 feature_id / operator 一致。按第 6 节“绑定校验”，保存规范化后的 spec。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>…/revisions/{rev}/review</code></td><td><code>{"decision", "comment"?}</code></td><td>仅 pending；审核人 ≠ created_by。reject 需 comment → rejected。approve 见第 6 节“绑定生效”。返回 <code>Revision</code>。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>…/revisions/{rev}/withdraw</code></td><td>—</td><td>仅 pending、仅本人 → withdrawn。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/bindings/export</code></td><td>同列表筛选参数</td><td>下载文件 <code>ei-feature-service-bindings.json</code>：<code>{"format": "ei-feature-service.bindings/v2", "exported_at", "bindings": [BindingSpec + "revision"]}</code>，只含生效且非空的修订。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>/api/bindings/import</code></td><td><code>dry_run</code>（默认 true）；body 为导出格式</td><td><code>{"items": [{"feature_id","operator","action": "new"|"skip"|"conflict"|"error","message","revision"?,"errors"?}]}</code>。每个算子独立按“绑定校验”：有待审核 → conflict；与生效修订一致 → skip；文件内同一算子重复 → error。<code>dry_run=false</code> 时在一个事务里为所有 new 插入 pending 修订（source=import）。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/schedules</code></td><td><code>tool?</code> <code>chamber?</code></td><td><code>[{"tool","chamber","gde_sub_id","recipes","operator_count","synced","last_error","status": "running"|"paused"|"cancelled"|"unknown","progress"?}]</code>，来自 <code>chamber_subscription</code>（只列订阅范围非空或仍有订阅的腔室）。status 经 SDK 查询（失败时 unknown）；synced 表示 GDE 订阅范围已与 recipes 一致；progress = 该腔室 live 批次中最大的 run_end_at。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>/api/schedules/{chamber}/pause</code>、<code>/resume</code></td><td>—</td><td>调 SDK 暂停 / 恢复该腔室的 gde_sub_id。无订阅 → 409 <code>INVALID_STATE</code>。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>/api/batches</code></td><td><code>{"chamber", "mode": "fill"|"overwrite", "operators": [算子引用], "from", "to", "reason"}</code></td><td>201 <code>Batch</code>（queued）。腔室没有任何生效绑定 → 409 <code>INVALID_STATE</code>（status=none）；operators 必须都在该腔室的生效绑定中；from ≤ to ≤ 今天；天数 ≤ <code>BATCH_MAX_DAYS</code>；reason 必填。plan 为此刻生效绑定在该腔室上的 recipe → 算子快照。</td></tr>
     <tr><td><span class="method m-get">GET</span> <code>/api/batches</code>、<code>/api/batches/{id}</code></td><td><code>chamber?</code> <code>mode?</code> <code>status?</code></td><td>列表按 batch_id 降序 / 单个 <code>Batch</code>。</td></tr>
-    <tr><td><span class="method m-post">POST</span> <code>/api/batches/{id}/cancel</code></td><td>—</td><td>仅 queued / running 的 fill、overwrite → cancelled；BatchRunner 在处理下一个 run_id 前检查状态并停止，已写入的值保留。</td></tr>
-    <tr><td><span class="method m-get">GET</span> <code>/api/values</code></td><td><code>feature</code>（必填，id@version）<code>tool?</code> <code>chamber?</code> <code>recipe?</code> <code>wafer?</code> <code>lot?</code> <code>from?</code> <code>to?</code> <code>only_null?</code></td><td>列表 <code>Value</code>，按 run_end_at 升序。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>/api/batches/{id}/cancel</code></td><td>—</td><td>仅 queued / running 的 fill、overwrite → cancelled；已写入的值保留。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/values</code></td><td><code>operator</code>（必填，算子引用）<code>tool?</code> <code>chamber?</code> <code>recipe?</code> <code>wafer?</code> <code>lot?</code> <code>from?</code> <code>to?</code> <code>only_null?</code></td><td>列表 <code>Value</code>，按 run_end_at 升序。</td></tr>
   </table></div>
 
   <h3>6. 状态机与关键事务</h3>
   <div class="cols">
   <div>
-  <div class="file">特征 feature.status</div>
+  <div class="file">特征 feature.status、算子 operator.status</div>
 <pre><code>draft     --submit(本人)--------------&gt; review
 review    --review approve(他人)-------&gt; published
 review    --review reject(他人, 意见)---&gt; draft
 published --retire(原因)---------------&gt; retired
-<span class="c"># draft 可重新上传同版本？不可以：同一 (id, version) 只能上传一次，</span>
-<span class="c"># 被退回后改代码需要上传新版本号。draft 允许删除：</span>
-<span class="c"># DELETE /api/features/{id}/{version}（仅 draft、仅本人，同时删 MinIO 对象）</span></code></pre>
+<span class="c"># 特征：approve 时同 feature_id 旧的 published → retired（被替代）；</span>
+<span class="c">#       手动 retire 表示整个特征下线，全部 published 算子一起下线</span>
+<span class="c"># 算子：approve 需 trial_runs 非空，且特征已有 published 版本</span>
+<span class="c"># 两者都不能重复提交同一版本；draft 可由本人删除</span></code></pre>
   </div>
   <div>
-  <div class="file">绑定修订 chamber_binding.status</div>
+  <div class="file">绑定修订 operator_binding.status</div>
 <pre><code>(新建)  --------------------------&gt; pending
 pending --approve(他人)-------------&gt; active   <span class="c"># 原 active → superseded</span>
 pending --reject(他人, 意见)--------&gt; rejected
 pending --withdraw(本人)------------&gt; withdrawn
-pending --所含特征被下线(system)----&gt; withdrawn
+pending --所绑算子版本被下线(system)--&gt; withdrawn
 active  --新修订生效----------------&gt; superseded
 <span class="c"># source=system 的修订直接以 active 插入，不经过 pending</span></code></pre>
   </div>
   </div>
 
+  <p><strong>新增算子</strong>（<code>POST /api/operators</code>，一个事务，advisory lock <code>feature:{feature_id}</code>）：校验 → 查特征存在且未整体下线 → version = max(version) + 1 → 确定 code_file 并查重 → 写 MinIO（<code>features/{fid}/operators/{name}/{version}/operator.json</code> 和 <code>{code_file}</code>）→ 插入 operator。operator.json 按键排序、缩进 2 序列化后存储；code_hash = sha256(operator.json 字节 + b"\n" + 代码字节)。</p>
+
   <p><strong>绑定校验</strong>（提交、导入共用，全部错误一次返回）：</p>
   <ol>
-    <li>经 SDK 查询：chamber 存在且属于 tool；每个 recipe 属于该 chamber。</li>
-    <li>rules 至少 1 条；每条 recipes、features 都至少 1 个；同一 chamber 内 recipe 不重复。</li>
-    <li>每个 features 项对应的 (feature_id, version) 存在且 status=published。</li>
-    <li>该 chamber 没有 pending 修订（否则 <code>PENDING_EXISTS</code>）；规范化后（recipes 排序、rules 保持顺序）与生效修订 spec 相同则 <code>NO_CHANGE</code>。</li>
+    <li>(feature_id, operator, version) 对应的算子存在且 status=published（错误 path=<code>version</code>）。</li>
+    <li>recipes 至少 1 个、recipe 不重复；每个 recipe 至少勾选 1 个腔室；fleet.start ≤ fleet.end。</li>
+    <li>经 SDK <code>recipe_chambers(recipe)</code> 反查：recipe 存在；勾选的每个 (tool, chamber) 都在反查结果中。</li>
+    <li>该算子没有 pending 修订（否则 <code>PENDING_EXISTS</code>）；规范化后（recipe 按名称排序，腔室按 (tool, chamber) 排序去重）与生效修订 spec 相同则 <code>NO_CHANGE</code>。</li>
   </ol>
-  <p><strong>新修订号</strong> = 该 chamber 现有最大 revision + 1（在事务里 <code>SELECT … FOR UPDATE</code> 锁住该 chamber 的行，或用 advisory lock <code>hashtext(chamber)</code>）。插入 chamber_binding 的同一事务里按 spec 展开写 <code>binding_item</code>（rule_no 从 1 开始）。</p>
+  <p><strong>新修订号</strong> = 该算子现有最大 revision + 1（advisory lock <code>binding:{feature_id}/{operator}</code>）。同一事务里按 spec 展开写 <code>binding_item</code>（每个 recipe × 腔室一行，带 tool 和算子 version）。</p>
 
-  <p><strong>绑定生效</strong>（approve）：</p>
+  <p><strong>绑定生效</strong>（approve，一个事务）：</p>
   <ol>
-    <li>读当前 active 修订 A（可能没有）和待审核修订 P。</li>
-    <li>调 SDK：A 没有 gde_sub_id → <code>subscribe(tool, chamber, recipes(P))</code> 得到 sub_id；有且 recipes 集合变化 → <code>update_subscription(sub_id, recipes(P))</code>；没变化 → 不调用。SDK 失败 → 502，什么都不改。</li>
-    <li>事务：A.status=superseded、A.superseded_at=now()；P.status=active、reviewed_by/at、review_note、gde_sub_id=sub_id。</li>
-    <li>如果事务失败而第 2 步是新注册，调用 <code>cancel_subscription(sub_id)</code> 回滚（失败只记日志）。</li>
+    <li>P 所绑算子版本仍为 published（否则 409）。</li>
+    <li>当前 active 修订 A（可能没有）→ superseded；P → active，写 reviewed_by/at、review_note。</li>
+    <li>对 A、P 涉及的全部腔室执行“订阅重算”。</li>
+    <li>事务提交后对这些腔室执行“订阅同步”。同步失败不影响审核结果，记在 <code>chamber_subscription.last_error</code>，由后台任务重试。</li>
   </ol>
 
-  <p><strong>下线</strong>（retire，一个事务）：</p>
+  <p><strong>订阅重算</strong>（在调用方事务里，按腔室名排序依次 advisory lock <code>sub:{chamber}</code>）：recipes = 所有 active 修订的 binding_item 中该腔室的 recipe 并集（排序）；写入 <code>chamber_subscription.recipes</code>（不存在则插入，tool 取自 binding_item）。</p>
+  <p><strong>订阅同步</strong>（<code>src/service/subscription.py</code>，事务外）：对每个腔室 <code>SELECT … FOR UPDATE SKIP LOCKED</code>，若 recipes ≠ synced_recipes 或“需要订阅却没有 gde_sub_id”：recipes 非空且无订阅 → <code>subscribe(tool, chamber, recipes)</code>；非空且有订阅 → <code>update_subscription</code>；为空且有订阅 → <code>cancel_subscription</code>，gde_sub_id 置空。成功写 synced_recipes、synced_at，清空 attempts、last_error；失败 attempts+1、记 last_error。<code>src/engine/jobs.py</code> 每 60 秒对全部未同步腔室执行一次。</p>
+
+  <p><strong>算子下线</strong>（retire，一个事务）：</p>
   <ol>
-    <li>feature.status=retired，写 retired_by/at、retire_reason。</li>
-    <li>用 binding_item 找出 active 修订中含该 (id, version) 的腔室。对每个腔室：从 spec 删掉该特征，删除变空的规则；把该腔室的 pending 修订置为 withdrawn，review_note=“特征 {ref} 下线，自动撤回”；插入新修订（source=system，status=active，created_by=system，reviewed_by=system）；旧 active → superseded。</li>
-    <li>新修订没有规则时：调用 SDK <code>cancel_subscription</code>，新修订的 gde_sub_id 置空；配方集合变了则 <code>update_subscription</code>。SDK 调用放在事务提交后执行，失败写入 <code>gde_outbox</code> 表，由后台任务 <code>src/engine/jobs.py</code> 每分钟重试（实现为一张简单的表 <code>gde_outbox(id, action, payload jsonb, attempts, last_error, created_at, done_at)</code>）。</li>
+    <li>operator.status=retired，写 retired_by/at、retire_reason。</li>
+    <li>该算子的 pending 修订若绑定的正是此版本 → withdrawn，review_note=“算子 {ref} 下线，自动撤回”。</li>
+    <li>该算子的 active 修订若绑定的正是此版本：其余 pending 修订也撤回；A → superseded；插入 recipes 为空的新修订（source=system，status=active，created_by=reviewed_by=system）；对 A 涉及的腔室执行“订阅重算”。</li>
+    <li>提交后执行“订阅同步”（没有算子要算的腔室会被取消订阅）。</li>
   </ol>
 
-  <h3>7. 特征包与运行库 eifeature</h3>
-  <p><strong>上传校验</strong>（<code>src/service/package.py</code>，全部错误一次返回）：</p>
+  <h3>7. 特征、算子与运行库 eifeature</h3>
+  <p><strong>提交校验</strong>（<code>src/service/package.py</code>，全部错误一次返回，错误码 <code>SPEC_INVALID</code>）：</p>
   <ul>
-    <li>feature.json：合法 JSON；<code>id</code> 匹配 <code>^[a-z][a-z0-9_]{2,63}$</code>；<code>version</code> 匹配 <code>^\d+\.\d+\.\d+$</code>；<code>desc</code> 1~200 字；<code>output.unit</code> 字符串，最长 32。其他键原样保存。</li>
-    <li>(id, version) 不存在；version 大于该 id 已有的最大版本。</li>
-    <li>compute.py：UTF-8，≤ 256 KB，能 <code>ast.parse</code>；模块顶层定义 <code>def fetch(run_id)</code> 和 <code>def compute(data)</code>，各恰好一个位置参数。</li>
+    <li>feature.json：<code>id</code> 匹配 <code>^[a-z][a-z0-9_]{2,63}$</code>；<code>version</code> 匹配 <code>^\d+\.\d+\.\d+$</code>；<code>desc</code> 1~200 字；<code>output</code> 若有须为对象，<code>output.unit</code> 字符串，最长 32。其他键原样保存。</li>
+    <li>operator.json：<code>name</code> 规则同特征 id；<code>desc</code> 1~200 字；其他键原样保存。</li>
+    <li>code_file（指定时）：匹配 <code>^[A-Za-z_][A-Za-z0-9_]{0,63}\.py$</code>。</li>
+    <li>代码：UTF-8 ≤ 256 KB，能 <code>ast.parse</code>；模块顶层定义 <code>def fetch(run_id)</code> 和 <code>def compute(data)</code>，各恰好一个位置参数。</li>
     <li>import 白名单：<code>eifeature</code>、<code>math</code>、<code>statistics</code>、<code>numpy</code>、<code>typing</code>、<code>dataclasses</code>、<code>functools</code>、<code>itertools</code>、<code>collections</code>。禁止名称：<code>open</code> <code>exec</code> <code>eval</code> <code>compile</code> <code>__import__</code> <code>globals</code> <code>locals</code> <code>input</code> <code>breakpoint</code>，以及任何以双下划线开头的属性访问。</li>
-    <li>package_hash = sha256(feature.json 字节 + b"\n" + compute.py 字节)。</li>
   </ul>
 <div class="file">src/eifeature 对外接口</div>
 <pre><code><span class="k">class</span> Skip(Exception):
@@ -1153,9 +1190,11 @@ active  --新修订生效----------------&gt; superseded
   <h3>8. GDE SDK 适配层</h3>
   <p class="muted">GDE SDK 的真实函数名待与数据底座确认。服务内部只依赖下面这个协议，<code>SdkGdeClient</code> 负责把它映射到真实 SDK，<code>FakeGdeClient</code> 用内存数据实现，供测试和本地开发使用（<code>config.json</code> 中 <code>gde.fake=true</code> 时启用）。</p>
 <pre><code><span class="k">class</span> GdeClient(Protocol):
-    <span class="c"># 元数据（只用于后端校验；前端直接调 GDE 元数据服务）</span>
-    <span class="k">def</span> chamber_tool(self, chamber: str) -&gt; str | None
-    <span class="k">def</span> chamber_recipes(self, chamber: str) -&gt; list[str]
+    <span class="c"># 元数据（绑定页面经 /api/gde 转发调用；绑定校验也用 recipe_chambers）</span>
+    <span class="k">def</span> list_fleets(self) -&gt; list[str]
+    <span class="k">def</span> fleet_chambers(self, fleet: str, start: datetime, end: datetime) -&gt; list[tuple[str, str]]  <span class="c"># [(tool, chamber)]</span>
+    <span class="k">def</span> list_recipes(self) -&gt; list[str]
+    <span class="k">def</span> recipe_chambers(self, recipe: str) -&gt; list[tuple[str, str]]   <span class="c"># 反查跑过该 recipe 的机台、腔室</span>
     <span class="c"># 订阅</span>
     <span class="k">def</span> subscribe(self, tool: str, chamber: str, recipes: list[str]) -&gt; str   <span class="c"># 返回 sub_id</span>
     <span class="k">def</span> update_subscription(self, sub_id: str, recipes: list[str]) -&gt; None
@@ -1168,8 +1207,9 @@ active  --新修订生效----------------&gt; superseded
     <span class="k">def</span> run_info(self, run_id: str) -&gt; Run
     <span class="k">def</span> trace(self, run_id: str, signal: str, unit: str | None, timeout_s: float) -&gt; Series
 
-<span class="c"># 所有方法失败时抛 GdeUnavailable（网络、5xx、超时）或 GdeNotFound（run / 信号不存在）。</span>
-<span class="c"># SDK 是同步库：在 async 代码中通过 asyncio.to_thread 调用。</span></code></pre>
+<span class="c"># 所有方法失败时抛 GdeUnavailable（网络、5xx、超时）或 GdeNotFound（run / 信号 / fleet / recipe 不存在）。</span>
+<span class="c"># SDK 是同步库：在 async 代码中通过 asyncio.to_thread 调用。</span>
+<span class="c"># FakeGdeClient：FLEET-ETCH-A = ETCH-01（CH-A01、CH-A02），FLEET-ETCH-B = ETCH-02（CH-B02）；不区分时间范围。</span></code></pre>
 
   <h3>9. 计算引擎</h3>
 <div class="file">RunResult（沙箱返回）与原因码映射</div>
@@ -1193,23 +1233,22 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
   对每条消息并发处理（受信号量约束）：
     m = 解析字段 run_id, tool, chamber, recipe, wafer?, lot?, end_at, sub_id?
     缺字段 -&gt; 记日志，XACK，结束
-    rev = 该 chamber 的 active 修订；没有 -&gt; XACK，结束
-    feats = binding_item 中 (chamber, rev, recipe) 的全部特征；空 -&gt; XACK，结束
-    batch = 取或建实时批次(chamber, rev, end_at 所在整点)          <span class="c"># 见下</span>
-    for f in feats:
-        已存在 feature_value(f.id, f.version, run_id) -&gt; 跳过           <span class="c"># 去重</span>
+    ops = 所有 active 修订的 binding_item 中 (chamber, recipe) 对应的算子版本；空 -&gt; XACK，结束
+    batch = 取或建实时批次(chamber, end_at 所在整点)                 <span class="c"># 见下</span>
+    for op in ops:
+        已存在 feature_value(op.feature_id, op.name, op.version, run_id) -&gt; 跳过   <span class="c"># 去重</span>
         async with 全局信号量, 腔室信号量(chamber), 熔断器:
-            r = await sandbox.run(package(f), run_id)
+            r = await sandbox.run(op, run_id)
         GdeUnavailable -&gt; 本条消息不 ACK（留给重试），继续下一条消息
         写 feature_value（INSERT … ON CONFLICT DO NOTHING），并更新批次计数
-    全部特征写完 -&gt; XACK
+    全部算子写完 -&gt; XACK
   投递次数（XPENDING 中的 times_delivered）&gt; MAX_DELIVERIES 的消息：
-    对未写结果的特征写 reason="FETCH_ERROR"、reason_detail="max deliveries exceeded"，然后 XACK</code></pre>
+    对未写结果的算子写 reason="FETCH_ERROR"、reason_detail="max deliveries exceeded"，然后 XACK</code></pre>
   <ul>
-    <li><strong>实时批次：</strong>键 (chamber, binding_revision, data_from=整点)。用唯一部分索引 <code>ON feature_batch (chamber, binding_revision, data_from) WHERE mode='live'</code> 配合 <code>INSERT … ON CONFLICT DO NOTHING</code> 再查询来取或建；created_by=system，status=running，data_to=data_from+1h。<code>src/engine/jobs.py</code> 每 5 分钟把 data_to 早于 now()−10 分钟的 running 实时批次置为 done、写 finished_at。</li>
-    <li><strong>计数：</strong>写入一个值后 <code>UPDATE feature_batch SET value_ok = value_ok + 1</code>（或 value_null）；run_total 在一条消息的所有特征处理完后 +1。</li>
+    <li><strong>实时批次：</strong>键 (chamber, data_from=整点)。用唯一部分索引 <code>ON feature_batch (chamber, data_from) WHERE mode='live'</code> 配合 <code>INSERT … ON CONFLICT DO NOTHING</code> 再查询来取或建；created_by=system，status=running，data_to=data_from+1h。<code>src/engine/jobs.py</code> 每 5 分钟把 data_to 早于 now()−10 分钟的 running 实时批次置为 done、写 finished_at。</li>
+    <li><strong>计数：</strong>写入一个值后 <code>UPDATE feature_batch SET value_ok = value_ok + 1</code>（或 value_null）；run_total 在一条消息的所有算子处理完后 +1。</li>
     <li><strong>熔断：</strong>连续 <code>BREAKER_FAILURES</code> 次 GdeUnavailable 后，<code>BREAKER_PAUSE_S</code> 秒内所有取数直接视为 GdeUnavailable；任何一次成功清零。</li>
-    <li><strong>特征包加载：</strong>按 (id, version) 从 MinIO 下载到 <code>{PACKAGE_CACHE_DIR}/{id}/{version}/</code>，校验 package_hash 后缓存；子进程用 <code>importlib</code> 以唯一模块名加载 compute.py，并按 (id, version) 缓存模块对象。</li>
+    <li><strong>算子加载：</strong>按 (feature_id, name, version) 从 MinIO 下载 operator.json 和 code_file 到 <code>{PACKAGE_CACHE_DIR}/{feature_id}/{name}/{version}/{code_hash[:12]}/</code>，校验 code_hash 后缓存；子进程用 <code>importlib</code> 以唯一模块名（含 hash）加载代码文件并缓存模块对象。沙箱入参为 <code>OperatorRef(feature_id, operator, version, code_hash, code_file)</code>。</li>
   </ul>
 
 <div class="file">src/engine/batch_runner.py · BatchRunner（每个实例一个，取补算 / 重算任务）</div>
@@ -1218,62 +1257,55 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
       LIMIT 1 FOR UPDATE SKIP LOCKED
   没有 -&gt; 等待
   b.status='running', started_at=now()
-  rev = chamber_binding(b.chamber, b.binding_revision)
-  runs = gde.list_runs(b.chamber, recipes(rev), b.data_from, b.data_to)
+  plan = b.plan（创建时快照 {recipe: [算子引用]}），按引用读出算子的 code_hash、code_file
+  runs = gde.list_runs(b.chamber, sorted(plan), b.data_from, b.data_to)
   for run in runs:                                   <span class="c"># 每处理一个 run 前重新读 b.status，cancelled 则停止</span>
-      for f in b.features 中、且 run.recipe 在 rev 里对应该特征的规则内:
+      for op in plan[run.recipe]:
           fill：已有 feature_value -&gt; 跳过
           async with 全局信号量, 补算信号量, 腔室信号量, 熔断器:
               r = sandbox.run(...)
           GdeUnavailable -&gt; 退避重试 3 次（5s/20s/60s），仍失败则 b.status='failed'、b.error，结束
           fill：INSERT … ON CONFLICT DO NOTHING
-          overwrite：同一事务内 DELETE (f, run_id) 再 INSERT，batch_id=b.batch_id
-  overwrite 完成后：把同腔室、时间重叠、特征有交集、未被覆盖的旧批次 superseded_by=b.batch_id
+          overwrite：同一事务内 DELETE (op, run_id) 再 INSERT，batch_id=b.batch_id
+  overwrite 完成后：把同腔室、时间重叠、算子有交集（operators ?| …，live 批次视为全部）、未被覆盖的旧批次 superseded_by=b.batch_id
   b.status='done', finished_at=now(), run_total=len(runs)</code></pre>
   <p class="muted">试跑在处理请求的同一进程内执行：同一个 <code>sandbox.run</code>，受 <code>TRIAL_CONCURRENCY</code> 信号量限制，超时与原因码规则相同，结果直接返回不写库。</p>
 
-  <h3>10. 数据库补充</h3>
-  <p class="muted"><code>src/model/schema.sql</code> = “结果 · 设计说明”中的 schema.sql + 下面这些，所有 <code>CREATE TABLE</code> / <code>CREATE INDEX</code> 都写成 <code>IF NOT EXISTS</code>。以后加字段也追加到这个文件，用 <code>ALTER TABLE … ADD COLUMN IF NOT EXISTS</code>。</p>
-<pre><code><span class="k">CREATE UNIQUE INDEX</span> feature_batch_live_uq <span class="k">ON</span> feature_batch (chamber, binding_revision, data_from)
-  <span class="k">WHERE</span> mode = <span class="s">'live'</span>;
-<span class="k">CREATE INDEX</span> feature_batch_queue <span class="k">ON</span> feature_batch (status, batch_id) <span class="k">WHERE</span> status <span class="k">IN</span> (<span class="s">'queued'</span>, <span class="s">'running'</span>);
-
-<span class="k">CREATE TABLE</span> gde_outbox (                    <span class="c">-- 事务提交后需要补做的 SDK 调用</span>
-  id         <span class="k">BIGSERIAL PRIMARY KEY</span>,
-  action     <span class="k">TEXT</span>  <span class="k">NOT NULL</span>,                 <span class="c">-- update_subscription / cancel_subscription</span>
-  payload    <span class="k">JSONB</span> <span class="k">NOT NULL</span>,
-  attempts   <span class="k">INT</span>   <span class="k">NOT NULL DEFAULT</span> 0,
-  last_error <span class="k">TEXT</span>,
-  created_at <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL DEFAULT</span> now(),
-  done_at    <span class="k">TIMESTAMPTZ</span>
-);</code></pre>
+  <h3>10. 数据库</h3>
+  <p class="muted">完整的 <code>src/model/schema.sql</code> 见“结果 · 设计说明”弹窗（两者逐字一致），启动时整体执行，所有 <code>CREATE TABLE</code> / <code>CREATE INDEX</code> 都写成 <code>IF NOT EXISTS</code>。以后加字段追加到这个文件，用 <code>ALTER TABLE … ADD COLUMN IF NOT EXISTS</code>。本版表结构与“特征包 + 按腔室绑定”的旧版不兼容（旧表 <code>chamber_binding</code>、<code>gde_outbox</code> 已删除），旧库需先清空再启动。几个关键约束：</p>
+  <ul>
+    <li><code>feature_one_published</code>：同一 feature_id 最多一个 published 版本。</li>
+    <li><code>operator_code_file</code>：同一 feature_id 内代码文件名唯一。</li>
+    <li><code>operator_binding_one_pending</code> / <code>_one_active</code>：每个算子最多一个待审核、一个生效修订。</li>
+    <li><code>feature_batch_live_uq</code>：实时批次按 (chamber, 整点) 唯一。</li>
+  </ul>
 
   <h3>11. 前端（单独仓库）</h3>
   <div class="table-wrap"><table class="nowrap-first">
     <tr><th>路由</th><th>页面内容</th><th>调用</th></tr>
-    <tr><td><code>/features</code></td><td>筛选栏（状态、关键字）+ 表格（特征、版本、说明、状态、提交人、评审人、操作）。操作：试跑（非 retired）、提交评审（draft 本人）、评审（review）、下线（published）。上传对话框选两个文件。评审对话框：描述、代码（只读高亮）、试跑框、评审清单 5 项（全部勾选才能通过）、意见。</td><td>features 全部接口</td></tr>
-    <tr><td><code>/bindings</code></td><td>筛选栏（机台 → 腔室 → 配方级联、特征、状态：生效中 / 有待审核 / 未绑定）+ 规则表（每行一条规则）+ 编辑区（规则卡片：配方芯片多选、已在其他规则中的配方置灰；特征勾选 + 版本下拉；实时生成的 JSON；历史修订与对比）。按钮：导入、导出、提交审核、撤销修改。</td><td>chamber-bindings 全部接口；GDE 元数据服务</td></tr>
-    <tr><td><code>/schedules</code></td><td>腔室订阅表（订阅 ID、生效修订、特征数、已处理到、状态、暂停 / 恢复、补算、重算）+ 批次表（可按腔室、类型、状态筛选，可取消）。补算 / 重算对话框同第 3 页控制台。</td><td>schedules、batches</td></tr>
-    <tr><td><code>/results</code></td><td>筛选栏（机台、腔室、特征、7 / 30 天）+ 折线图（ECharts；正常值、重算后的值、空值三种点）+ 点击点显示来源 + 空值原因统计。</td><td>values、batches/{id}</td></tr>
+    <tr><td><code>/features</code></td><td>筛选栏（状态、关键字）+ 特征表格（特征、版本、说明、算子数、状态、提交人、评审人、操作），展开一行显示该特征的算子表（算子、版本、文件、状态、操作）。操作：新增特征（表单直接填 feature.json）、<b>新增算子</b>（填 operator.json、粘贴或编辑代码，可选填 py 文件名，不填显示默认 <code>{name}_v{n}.py</code>；同名算子自动成为新版本）、提交评审、评审、下线、试跑（算子）。特征评审：描述 + 意见；算子评审：描述、代码（只读高亮）、试跑框、评审清单、意见。</td><td>features、operators 全部接口</td></tr>
+    <tr><td><code>/bindings</code></td><td>左侧算子列表（可按特征、算子、机台、腔室、recipe、状态筛选）；右侧编辑所选算子的绑定，按顺序四步：<br>① <b>选 fleet</b>（下拉）+ 时间范围（默认最近 1 个月）→ 调 <code>/api/gde/fleets/{fleet}/chambers</code>，返回的腔室<b>默认全部勾选</b>，可取消；<br>② <b>选 recipe</b>：下拉框，候选来自 <code>/api/gde/recipes</code>，输入关键字时自动过滤（<code>q</code> 参数，防抖 300 ms），点击候选项即加入“已绑定 recipe”列表；<br>③ 每个已绑定 recipe 调 <code>/api/gde/recipes/{recipe}/chambers</code> 反查机台和腔室，按机台分组显示，<b>默认全部勾选</b>（只列出第 ① 步中仍勾选的腔室；反查到但不在 fleet 范围内的折叠显示、默认不勾选）；可移除 recipe；<br>④ 选算子版本（默认最新已发布版本），实时生成的绑定 JSON，历史修订与对比，提交审核 / 撤销修改。另有导入、导出。</td><td>bindings 全部接口；<code>/api/gde/*</code></td></tr>
+    <tr><td><code>/schedules</code></td><td>腔室订阅表（订阅 ID、订阅的 recipe、算子数、是否已同步 / 最近错误、已处理到、状态、暂停 / 恢复、补算、重算）+ 批次表（可按腔室、类型、状态筛选，可取消）。补算 / 重算对话框按腔室勾选算子。</td><td>schedules、batches</td></tr>
+    <tr><td><code>/results</code></td><td>筛选栏（机台、腔室、特征 → 算子、7 / 30 天）+ 折线图（ECharts；正常值、重算后的值、空值三种点）+ 点击点显示来源 + 空值原因统计。</td><td>values、batches/{id}</td></tr>
   </table></div>
   <ul>
-    <li>需要配置两个地址：本服务、GDE 元数据服务。所有请求带 <code>X-Client: console</code>；<code>X-User</code> 由网关注入。</li>
-    <li>GDE 元数据服务接口（待与数据底座确认，前端封装在一个文件里）：<code>GET /tools</code> → <code>[{tool}]</code>；<code>GET /tools/{tool}/chambers</code> → <code>[{chamber}]</code>；<code>GET /chambers/{chamber}/recipes</code> → <code>[{recipe}]</code>。</li>
-    <li>错误统一用 Element Plus 消息提示 <code>message</code>；<code>BINDING_INVALID</code>、<code>PACKAGE_INVALID</code> 的 <code>details.errors</code> 逐条显示在对应位置。</li>
+    <li>只需配置本服务地址：GDE 元数据（fleet、腔室、recipe）统一经本服务的 <code>/api/gde/*</code> 转发。所有请求带 <code>X-Client: console</code>；<code>X-User</code> 由网关注入。</li>
+    <li>错误统一用 Element Plus 消息提示 <code>message</code>；<code>BINDING_INVALID</code>、<code>SPEC_INVALID</code> 的 <code>details.errors</code> 逐条显示在对应位置。</li>
   </ul>
 
   <h3>12. 测试与验收</h3>
   <div class="table-wrap"><table>
     <tr><th>范围</th><th>必须覆盖</th></tr>
-    <tr><td>特征包校验</td><td>每条校验规则至少一个通过、一个失败用例；版本递增判断（1.0.10 &gt; 1.0.9）。</td></tr>
+    <tr><td>提交校验</td><td>feature.json、operator.json、code_file、代码每条规则至少一个通过、一个失败用例；特征版本递增判断（1.0.10 &gt; 1.0.9）；同名算子版本自动 +1、默认文件名、文件名重复 409。</td></tr>
     <tr><td>eifeature</td><td>steps / window 边界；dedup、resample、despike、slope、mean、std 与手算结果一致（误差 1e-9）。</td></tr>
     <tr><td>沙箱</td><td>第 9 节原因码映射表每一行；死循环被杀；compute 中调用 gde 报错。</td></tr>
-    <tr><td>状态机</td><td>第 6 节每条转移的允许 / 拒绝，包括本人评审 403、本人审核 403、他人撤回 403。</td></tr>
-    <tr><td>绑定</td><td>校验各条；approve 时 SDK 调用顺序（subscribe / update / 不调用）；SDK 失败不改库；导入的 new / skip / conflict / error。</td></tr>
-    <tr><td>下线</td><td>移除特征、删空规则、撤回 pending、取消订阅写 outbox。</td></tr>
+    <tr><td>状态机</td><td>第 6 节每条转移的允许 / 拒绝，包括本人评审 403、本人审核 403、他人撤回 403；新特征版本发布时旧版本自动下线；特征未发布时算子不能发布。</td></tr>
+    <tr><td>绑定</td><td>校验各条（算子未发布、recipe 不存在、腔室没有该 recipe）；approve 后订阅重算与同步（subscribe / update / cancel）；GDE 不可用时审核照样生效、后台重试后同步；导入的 new / skip / conflict / error。</td></tr>
+    <tr><td>GDE 元数据</td><td><code>/api/gde/*</code>：fleet 腔室默认时间范围、recipe 模糊过滤与 limit、recipe 反查、不存在 404。</td></tr>
+    <tr><td>下线</td><td>算子下线生成空 system 修订、撤回 pending、取消不再需要的订阅；特征整体下线带下全部已发布算子。</td></tr>
     <tr><td>LiveConsumer</td><td>（fakeredis + FakeGdeClient）同一消息投递两次只写一次；GdeUnavailable 不 ACK、认领后重试成功；超过投递上限写 FETCH_ERROR；配方不在绑定内直接 ACK；实时批次按整点归并。</td></tr>
     <tr><td>BatchRunner</td><td>fill 跳过已有值；overwrite 覆盖并标记旧批次 superseded_by；cancel 生效；两个实例不会领同一个批次。</td></tr>
-    <tr><td>端到端</td><td>真实 PostgreSQL + fakeredis + FakeGdeClient：上传 → 试跑 → 提交 → 他人评审 → 绑定 → 他人审核 → 向 Stream 写一条通知 → 在 <code>/api/values</code> 查到值，且能追溯到批次和特征包 hash。</td></tr>
+    <tr><td>端到端</td><td>真实 PostgreSQL + fakeredis + FakeGdeClient：新增特征 → 他人评审 → 新增算子 → 试跑 → 他人评审 → 按算子绑定 → 他人审核 → 向 Stream 写一条通知 → 在 <code>/api/values</code> 查到值，且能追溯到批次和算子 code_hash。</td></tr>
   </table></div>
 </section>
 
@@ -1297,7 +1329,7 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
       <rect x="432" y="76" width="120" height="44" rx="14" fill="#F1EDFF"/><text x="492" y="103" fill="#7C5CFF">模块详细开发</text>
     </g>
     <g font-size="11.5" fill="#5D6880" text-anchor="middle">
-      <text x="492" y="140">特征管理 · 腔室绑定</text>
+      <text x="492" y="140">特征管理 · 算子绑定</text>
       <text x="492" y="158">调度管理 · 计算引擎</text>
       <text x="492" y="176">Web 控制台</text>
     </g>
@@ -1347,21 +1379,39 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
 
 <!-- ======================= 设计说明：特征 ======================= -->
 <template id="doc-features">
-  <h3>特征包</h3>
-  <p class="muted">示例：主刻蚀第 10~20 秒，工艺气体流量的平均变化率。</p>
+  <h3>特征与算子</h3>
+  <p class="muted"><b>特征</b>描述“算什么”（ID、说明、单位），<b>算子</b>是“怎么算”的一段代码。一个特征下可以有多个算子，随时可以再加；每个算子各自有版本、各自评审。不再上传文件：在页面上直接填 JSON 和代码（Agent 直接 POST 同样的 JSON）。</p>
+  <div class="table-wrap"><table class="nowrap-first">
+    <tr><th>操作</th><th>特征版本</th><th>算子版本</th><th>评审</th></tr>
+    <tr><td>新增特征</td><td>新建，如 1.0.0</td><td>—</td><td>需要（不用试跑）</td></tr>
+    <tr><td>修改特征说明 / 单位</td><td>新版本，如 1.1.0；发布后旧版本自动下线</td><td>不变，算子挂在特征 ID 下</td><td>需要</td></tr>
+    <tr><td>特征里新增一个算子</td><td><b>不变</b></td><td>新算子从 1 开始</td><td>需要（至少试跑 1 个 run_id）</td></tr>
+    <tr><td>再次提交同名算子（改代码）</td><td><b>不变</b></td><td>自动 +1，如 diffmean 1 → 2</td><td>需要（至少试跑 1 个 run_id）</td></tr>
+  </table></div>
 
   <div class="cols">
   <div>
-  <div class="file">feature.json</div>
+  <div class="file">feature.json（新增特征时填写）</div>
 <pre><code>{
   <span class="k">"id"</span>: <span class="s">"gas_flow_diffmean"</span>,
   <span class="k">"version"</span>: <span class="s">"1.0.0"</span>,
-  <span class="k">"desc"</span>: <span class="s">"主刻蚀第 10~20 秒流量的平均变化率"</span>,
+  <span class="k">"desc"</span>: <span class="s">"主刻蚀阶段工艺气体流量偏差"</span>,
   <span class="k">"output"</span>: { <span class="k">"unit"</span>: <span class="s">"sccm/s"</span> }
 }</code></pre>
+  <div class="file">operator.json（新增算子时填写）</div>
+<pre><code>{
+  <span class="k">"name"</span>: <span class="s">"slope_mean"</span>,
+  <span class="k">"desc"</span>: <span class="s">"主刻蚀第 10~20 秒流量的平均变化率"</span>
+}</code></pre>
+  <div class="file">POST /api/operators</div>
+<pre><code>{ <span class="k">"feature_id"</span>: <span class="s">"gas_flow_diffmean"</span>,
+  <span class="k">"spec"</span>: { <span class="c">… operator.json …</span> },
+  <span class="k">"code"</span>: <span class="s">"from eifeature import …"</span>,
+  <span class="k">"code_file"</span>: <span class="s">"slope_mean.py"</span> }   <span class="c">// 可不填</span></code></pre>
+  <p class="muted">py 文件名由用户指定；不填时按算子名和版本自动生成 <code>{name}_v{version}.py</code>（如 <code>slope_mean_v2.py</code>）。同一特征内文件名不能重复。</p>
   </div>
   <div>
-  <div class="file">compute.py（固定两个函数）</div>
+  <div class="file">算子代码（固定两个函数）</div>
 <pre><code><span class="k">from</span> eifeature <span class="k">import</span> gde, ops, Skip
 
 FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>, <span class="s">"CH-B02"</span>: <span class="s">"GasFlow_03"</span>}
@@ -1398,7 +1448,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
 
     <g filter="url(#sh)"><rect x="440" y="40" width="150" height="68" rx="18" fill="url(#gCard)"/></g>
     <text x="515" y="70" font-size="14" text-anchor="middle" fill="#1D2433" font-weight="700" font-family="monospace">data: dict</text>
-    <text x="515" y="90" font-size="11" text-anchor="middle" fill="#8A94AB">格式由特征自己定</text>
+    <text x="515" y="90" font-size="11" text-anchor="middle" fill="#8A94AB">格式由算子自己定</text>
 
     <g filter="url(#sh)"><rect x="640" y="40" width="210" height="68" rx="18" fill="url(#gOrange)"/></g>
     <text x="745" y="70" font-size="14" text-anchor="middle" fill="#fff" font-weight="700" font-family="monospace">compute(data)</text>
@@ -1430,10 +1480,10 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   </div>
 
   <h3>试跑：填 run_id 跑一次</h3>
-  <p class="muted">特征包不带测试用例。上传后、评审时、发布后，都可以在「特征」页点“试跑”，填一个真实的 run_id，系统按生产同样的方式执行一次 fetch 和 compute。</p>
+  <p class="muted">算子不带测试用例。新增后、评审时、发布后，都可以在「特征」页的算子行点“试跑”，填一个真实的 run_id，系统按生产同样的方式执行一次 fetch 和 compute。</p>
   <div class="cols">
   <div>
-  <div class="file">POST /api/features/gas_flow_diffmean/1.0.0/trial</div>
+  <div class="file">POST /api/operators/gas_flow_diffmean/slope_mean/1/trial</div>
 <pre><code>{ <span class="k">"run_id"</span>: <span class="s">"RUN-0338"</span> }
 
 <span class="c">// 返回</span>
@@ -1456,7 +1506,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   <h3>生命周期</h3>
   <div class="figure">
   <svg viewBox="0 0 880 210" role="img" aria-label="草稿提交评审后变为待评审，评审通过变为已发布，退回则回到草稿；已发布可以下线">
-    <text x="115" y="44" font-size="11.5" text-anchor="middle" fill="#8A94AB">上传并通过自动检查</text>
+    <text x="115" y="44" font-size="11.5" text-anchor="middle" fill="#8A94AB">填写并通过自动检查</text>
     <path d="M115 52 V70" stroke="#A3AECB" stroke-width="2" marker-end="url(#ah)"/>
     <text x="335" y="60" font-size="11.5" text-anchor="middle" fill="#8A94AB">内容锁定</text>
     <rect x="40" y="76" width="150" height="52" rx="16" fill="#FFF3E8" stroke="#F5B98A" stroke-width="1.5"/>
@@ -1477,28 +1527,30 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
     <text x="444" y="90" font-size="11.5" text-anchor="middle" fill="#5D6880">评审通过</text>
     <text x="664" y="90" font-size="11.5" text-anchor="middle" fill="#5D6880">下线</text>
     <text x="225" y="186" font-size="11.5" text-anchor="middle" fill="#F08A3C">退回（附评审意见）</text>
-    <text x="555" y="150" font-size="11.5" text-anchor="middle" fill="#8A94AB">只读，可在腔室绑定中勾选</text>
+    <text x="555" y="150" font-size="11.5" text-anchor="middle" fill="#8A94AB">只读；算子可在绑定中选用</text>
     <text x="775" y="150" font-size="11.5" text-anchor="middle" fill="#8A94AB">移出所有绑定</text>
     <text x="775" y="168" font-size="11.5" text-anchor="middle" fill="#8A94AB">历史值保留</text>
   </svg>
   </div>
 
-  <h3>评审要点</h3>
+  <p class="muted">特征和算子都走这四个状态，评审人不能是提交人。特征评审只看说明；算子评审还要至少试跑 1 个 run_id，且所属特征已有已发布版本。特征发布新版本时旧版本自动下线；手动下线特征表示整个特征停用，其已发布的算子一起下线。</p>
+
+  <h3>算子评审要点</h3>
   <div class="mod-grid">
     <div><b>描述与代码一致</b><span>信号、步骤、时间窗与 desc 相符</span></div>
     <div><b>两个函数职责清楚</b><span>fetch 取数，compute 计算</span></div>
     <div><b>数据不合格有原因码</b><span><code>raise Skip("LOW_COVERAGE")</code></span></div>
-    <div><b>与已有特征不重复</b><span>同一含义只保留一个特征</span></div>
+    <div><b>与已有算子不重复</b><span>同一特征下同一算法只保留一个算子</span></div>
     <div><b>试跑结果合理</b><span>用真实 run_id 试跑，值的量级、单位符合预期</span></div>
   </div>
 
-  <h3>修改已发布的特征</h3>
+  <h3>修改已发布的算子</h3>
   <div class="figure" style="padding:12px 16px">
-  <svg viewBox="0 0 880 70" role="img" aria-label="上传新版本，评审发布，在腔室绑定中切换版本，下线旧版本">
+  <svg viewBox="0 0 880 70" role="img" aria-label="提交同名算子得到新版本，评审发布，在算子绑定中切换版本，下线旧版本">
     <g font-size="13" text-anchor="middle" font-weight="600">
-      <rect x="10" y="14" width="190" height="42" rx="14" fill="#F1EDFF"/><text x="105" y="40" fill="#7C5CFF">上传新版本 1.0.1</text>
+      <rect x="10" y="14" width="190" height="42" rx="14" fill="#F1EDFF"/><text x="105" y="40" fill="#7C5CFF">提交同名算子 → v2</text>
       <rect x="236" y="14" width="190" height="42" rx="14" fill="#FFF3E8"/><text x="331" y="40" fill="#F08A3C">评审发布</text>
-      <rect x="462" y="14" width="190" height="42" rx="14" fill="#EDF2FF"/><text x="557" y="40" fill="#4C6FFF">腔室绑定切换版本</text>
+      <rect x="462" y="14" width="190" height="42" rx="14" fill="#EDF2FF"/><text x="557" y="40" fill="#4C6FFF">算子绑定切换版本</text>
       <rect x="688" y="14" width="182" height="42" rx="14" fill="#F1F3F8"/><text x="779" y="40" fill="#8A94AB">下线旧版本</text>
     </g>
     <g stroke="#A3AECB" stroke-width="2.2" stroke-linecap="round" marker-end="url(#ah)">
@@ -1508,96 +1560,94 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   </div>
 </template>
 
-<!-- ======================= 设计说明：腔室绑定 ======================= -->
+<!-- ======================= 设计说明：算子绑定 ======================= -->
 <template id="doc-bindings">
-  <p class="lede">腔室绑定决定：<b>哪台机台的哪个腔室、哪些配方的执行，要算哪些特征</b>。工程师在控制台里依次选择，系统自动生成 JSON；Agent 可以直接提交同样的 JSON。</p>
+  <p class="lede">算子绑定决定：<b>一个算子（的某个版本）在哪些机台、腔室的哪些 recipe 的执行上计算</b>。绑定以算子为单位：recipe 绑到算子上，每个 recipe 下勾选要算的机台和腔室。工程师在控制台里按 fleet → 腔室 → recipe → 机台 / 腔室 的顺序选择，系统自动生成 JSON；Agent 可以直接提交同样的 JSON。</p>
   <div class="figure">
-  <svg viewBox="0 0 880 250" role="img" aria-label="腔室 CH-A01 的两条规则：配方 RCP-0432、RCP-0433 计算 gas_flow_diffmean 和 pressure_std；配方 RCP-0500 计算 pressure_drop">
+  <svg viewBox="0 0 880 250" role="img" aria-label="算子 gas_flow_diffmean/diffmean@2 绑定两个 recipe：RCP-0432 在 CH-A01、CH-A02 上计算；RCP-0433 在 CH-A01 上计算">
     <circle cx="160" cy="200" r="80" fill="#EDF2FF"/>
-    <g filter="url(#sh)"><rect x="30" y="80" width="190" height="90" rx="22" fill="url(#gCard)"/></g>
-    <rect x="50" y="100" width="34" height="34" rx="11" fill="url(#gOrange)"/>
-    <circle cx="67" cy="114" r="5.5" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M67 120 v7" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
-    <text x="94" y="123" font-size="15" font-weight="700" fill="#1D2433">CH-A01</text>
-    <text x="50" y="154" font-size="11.5" fill="#8A94AB">机台 ETCH-01 · 来自 GDE</text>
+    <g filter="url(#sh)"><rect x="20" y="80" width="220" height="90" rx="22" fill="url(#gCard)"/></g>
+    <rect x="40" y="100" width="34" height="34" rx="11" fill="url(#gPurple)"/>
+    <text x="57" y="123" font-size="15" text-anchor="middle" fill="#fff" font-weight="700" font-family="monospace">ƒ</text>
+    <text x="84" y="116" font-size="13.5" font-weight="700" fill="#1D2433" font-family="monospace">diffmean@2</text>
+    <text x="84" y="134" font-size="11" fill="#8A94AB" font-family="monospace">gas_flow_diffmean</text>
+    <text x="40" y="156" font-size="11.5" fill="#8A94AB">fleet FLEET-ETCH-A · 最近 1 个月</text>
 
     <rect x="270" y="20" width="580" height="100" rx="20" fill="#F1EDFF"/>
-    <text x="290" y="46" font-size="12" fill="#7C5CFF" font-weight="600">规则 1</text>
-    <text x="290" y="76" font-size="12.5" fill="#1D2433" font-family="monospace">配方 RCP-0432, RCP-0433</text>
-    <text x="290" y="100" font-size="11" fill="#8A94AB">这些配方的每个执行</text>
+    <text x="290" y="46" font-size="12" fill="#7C5CFF" font-weight="600">recipe</text>
+    <text x="290" y="76" font-size="13" fill="#1D2433" font-family="monospace">RCP-0432</text>
+    <text x="290" y="100" font-size="11" fill="#8A94AB">GDE 反查到的机台 / 腔室，默认全选</text>
     <path d="M530 70 H566" stroke="#A3AECB" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round" marker-end="url(#ah)"/>
-    <rect x="576" y="40" width="256" height="26" rx="13" fill="#fff"/><text x="590" y="58" font-size="12" fill="#5D6880" font-family="monospace">gas_flow_diffmean@1.0.0</text>
-    <rect x="576" y="74" width="256" height="26" rx="13" fill="#fff"/><text x="590" y="92" font-size="12" fill="#5D6880" font-family="monospace">pressure_std@1.0.0</text>
+    <rect x="576" y="40" width="256" height="26" rx="13" fill="#fff"/><text x="590" y="58" font-size="12" fill="#5D6880" font-family="monospace">☑ ETCH-01 / CH-A01</text>
+    <rect x="576" y="74" width="256" height="26" rx="13" fill="#fff"/><text x="590" y="92" font-size="12" fill="#5D6880" font-family="monospace">☑ ETCH-01 / CH-A02</text>
 
     <rect x="270" y="134" width="580" height="80" rx="20" fill="#FFF3E8"/>
-    <text x="290" y="160" font-size="12" fill="#F08A3C" font-weight="600">规则 2</text>
-    <text x="290" y="190" font-size="12.5" fill="#1D2433" font-family="monospace">配方 RCP-0500</text>
+    <text x="290" y="160" font-size="12" fill="#F08A3C" font-weight="600">recipe</text>
+    <text x="290" y="190" font-size="13" fill="#1D2433" font-family="monospace">RCP-0433</text>
     <path d="M530 180 H566" stroke="#A3AECB" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round" marker-end="url(#ah)"/>
-    <rect x="576" y="166" width="256" height="26" rx="13" fill="#fff"/><text x="590" y="184" font-size="12" fill="#5D6880" font-family="monospace">pressure_drop@1.0.0</text>
+    <rect x="576" y="166" width="256" height="26" rx="13" fill="#fff"/><text x="590" y="184" font-size="12" fill="#5D6880" font-family="monospace">☑ ETCH-01 / CH-A01</text>
 
-    <path d="M224 112 C246 112 248 70 266 70" fill="none" stroke="#A3AECB" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round" marker-end="url(#ah)"/>
-    <path d="M224 140 C246 140 248 174 266 174" fill="none" stroke="#A3AECB" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round" marker-end="url(#ah)"/>
-    <text x="560" y="240" font-size="11.5" text-anchor="middle" fill="#8A94AB">未列出的配方（如 RCP-0510）的执行直接跳过，不产生结果</text>
+    <path d="M244 112 C256 112 256 70 266 70" fill="none" stroke="#A3AECB" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round" marker-end="url(#ah)"/>
+    <path d="M244 140 C256 140 256 174 266 174" fill="none" stroke="#A3AECB" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round" marker-end="url(#ah)"/>
+    <text x="560" y="240" font-size="11.5" text-anchor="middle" fill="#8A94AB">一次执行按“腔室 + recipe”找出所有绑定了它的算子，每个算子各算一次</text>
   </svg>
   </div>
 
-  <h3>筛选式列表</h3>
-  <p class="muted">页面顶部是筛选栏：<b>机台 → 腔室 → 配方</b> 级联，再加 <b>特征</b>、<b>状态</b>（生效中 / 有待审核 / 未绑定）。下方表格每行是一条规则，筛选“特征 = gas_flow_diffmean”就能看到它在哪些腔室、哪些配方上计算。点某行的“编辑”，在下方打开该腔室的编辑区。筛选条件对应 <code>GET /api/chamber-bindings</code> 的查询参数，后端用 <code>binding_item</code> 表查询。</p>
-
-  <h3>在编辑区里选择，自动生成 JSON</h3>
+  <h3>编辑区：四步选择，自动生成 JSON</h3>
   <ol class="steps-list">
-    <li><strong>选机台：</strong>机台列表由前端直接请求 GDE 元数据服务获取。</li>
-    <li><strong>选腔室：</strong>列出该机台下的腔室，标出哪些还未绑定。</li>
-    <li><strong>新增规则，点选配方：</strong>配方来自该腔室在 GDE 中的配方清单；已在其他规则中的配方不能再选，保证一个执行只命中一条规则。</li>
-    <li><strong>勾选要计算的特征：</strong>只列出已发布的特征；同一特征有多个已发布版本时，选择其中一个。</li>
-    <li><strong>查看生成的 JSON 并提交审核：</strong>生成待审核修订，审核通过后才开始计算。</li>
+    <li><strong>选 fleet：</strong>下拉选择 fleet，时间范围默认最近 1 个月（可改）。GDE 返回该 fleet 在这段时间内有执行的全部腔室，<b>默认全部勾选</b>，不需要的取消勾选。</li>
+    <li><strong>选 recipe：</strong>下拉框的候选来自 GDE 的全部 recipe；输入关键字后自动模糊过滤（如输入 <code>0432</code>），点击候选项即加入下方“已绑定 recipe”列表。可以连续添加多个。</li>
+    <li><strong>勾选机台 / 腔室：</strong>每加入一个 recipe，GDE 按 recipe 反查跑过它的全部机台和腔室，按机台分组显示，<b>默认全部勾选</b>（只列第 1 步中仍勾选的腔室；不在 fleet 范围内的折叠显示、默认不勾选）。可以取消勾选，或移除整个 recipe。</li>
+    <li><strong>确认算子版本并提交审核：</strong>默认最新的已发布版本；查看生成的 JSON 后提交，生成待审核修订，审核通过后才开始计算。</li>
   </ol>
-  <p class="muted">机台、腔室、配方由前端直接请求 GDE 元数据服务，ei-feature-service 不再提供代理接口；提交时后端经 SDK 校验腔室属于该机台、配方存在。工程师在界面上配置，Agent 直接 <code>POST</code> 提交 JSON。</p>
+  <p class="muted">fleet、腔室、recipe 的数据都经本服务的 <code>/api/gde/*</code> 转发（<code>fleets</code>、<code>fleets/{fleet}/chambers</code>、<code>recipes?q=</code>、<code>recipes/{recipe}/chambers</code>）；提交时后端经 SDK 反查校验每个勾选的腔室确实跑过该 recipe。</p>
 
-  <div class="file">生成的 JSON：POST /api/chamber-bindings/CH-A01</div>
+  <div class="file">生成的 JSON：POST /api/bindings/gas_flow_diffmean/diffmean</div>
 <pre><code>{
-  <span class="k">"tool"</span>:    <span class="s">"ETCH-01"</span>,
-  <span class="k">"chamber"</span>: <span class="s">"CH-A01"</span>,
-  <span class="k">"rules"</span>: [
-    {
-      <span class="k">"recipes"</span>:  [<span class="s">"RCP-0432"</span>, <span class="s">"RCP-0433"</span>],
-      <span class="k">"features"</span>: { <span class="k">"gas_flow_diffmean"</span>: <span class="s">"1.0.0"</span>, <span class="k">"pressure_std"</span>: <span class="s">"1.0.0"</span> }
-    },
-    {
-      <span class="k">"recipes"</span>:  [<span class="s">"RCP-0500"</span>],
-      <span class="k">"features"</span>: { <span class="k">"pressure_drop"</span>: <span class="s">"1.0.0"</span> }
-    }
+  <span class="k">"feature_id"</span>: <span class="s">"gas_flow_diffmean"</span>,
+  <span class="k">"operator"</span>:   <span class="s">"diffmean"</span>,
+  <span class="k">"version"</span>:    2,
+  <span class="k">"fleet"</span>: { <span class="k">"name"</span>: <span class="s">"FLEET-ETCH-A"</span>, <span class="k">"start"</span>: <span class="s">"2026-10-25"</span>, <span class="k">"end"</span>: <span class="s">"2026-11-25"</span> },
+  <span class="k">"recipes"</span>: [
+    { <span class="k">"recipe"</span>: <span class="s">"RCP-0432"</span>,
+      <span class="k">"chambers"</span>: [ { <span class="k">"tool"</span>: <span class="s">"ETCH-01"</span>, <span class="k">"chamber"</span>: <span class="s">"CH-A01"</span> },
+                    { <span class="k">"tool"</span>: <span class="s">"ETCH-01"</span>, <span class="k">"chamber"</span>: <span class="s">"CH-A02"</span> } ] },
+    { <span class="k">"recipe"</span>: <span class="s">"RCP-0433"</span>,
+      <span class="k">"chambers"</span>: [ { <span class="k">"tool"</span>: <span class="s">"ETCH-01"</span>, <span class="k">"chamber"</span>: <span class="s">"CH-A01"</span> } ] }
   ]
 }</code></pre>
-  <p class="muted"><code>features</code> 的键是特征 ID，值是版本号。</p>
+  <p class="muted"><code>fleet</code> 只用于页面回显选择条件，不参与计算；真正决定计算范围的是 <code>recipes</code>。</p>
+
+  <h3>筛选式列表</h3>
+  <p class="muted">页面左侧列出各算子的绑定（生效中 / 有待审核），可按特征、算子、机台、腔室、recipe、状态筛选；筛选“腔室 = CH-A01”就能看到这个腔室上会算哪些算子。筛选条件对应 <code>GET /api/bindings</code> 的查询参数，后端用 <code>binding_item</code> 表查询。</p>
 
   <h3>导入与导出</h3>
   <div class="cols">
   <div>
   <div class="file">导出文件：ei-feature-service-bindings.json</div>
 <pre><code>{
-  <span class="k">"format"</span>: <span class="s">"ei-feature-service.bindings/v1"</span>,
-  <span class="k">"exported_at"</span>: <span class="s">"2026-11-24T10:00:00+08:00"</span>,
+  <span class="k">"format"</span>: <span class="s">"ei-feature-service.bindings/v2"</span>,
+  <span class="k">"exported_at"</span>: <span class="s">"2026-11-25T10:00:00+08:00"</span>,
   <span class="k">"bindings"</span>: [
-    { <span class="k">"tool"</span>: <span class="s">"ETCH-01"</span>, <span class="k">"chamber"</span>: <span class="s">"CH-A01"</span>,
-      <span class="k">"revision"</span>: 2,          <span class="c">// 导出时的生效修订</span>
-      <span class="k">"rules"</span>: [ <span class="c">…</span> ] }
+    { <span class="k">"feature_id"</span>: <span class="s">"gas_flow_diffmean"</span>, <span class="k">"operator"</span>: <span class="s">"diffmean"</span>,
+      <span class="k">"version"</span>: 2, <span class="k">"fleet"</span>: { <span class="c">…</span> }, <span class="k">"recipes"</span>: [ <span class="c">…</span> ],
+      <span class="k">"revision"</span>: 3 }        <span class="c">// 导出时的生效修订</span>
   ]
 }</code></pre>
   </div>
   <div>
   <ul>
-    <li><strong>导出：</strong>按当前筛选条件导出<b>生效修订</b>；一个文件可包含多个腔室。用于备份、跨环境迁移、批量修改。</li>
-    <li><strong>导入：</strong>上传或粘贴 JSON，先 <code>dry_run</code> 逐腔室校验并展示差异；确认后<b>每个腔室生成一个待审核修订</b>，来源记为 <code>import</code>，仍需审核才生效。</li>
-    <li><strong>跳过与冲突：</strong>与生效修订完全一致的腔室跳过；已有待审核修订的腔室报冲突，不覆盖。</li>
-    <li><strong>导出可直接再导入：</strong><code>revision</code> 只作参考，导入时如果它与当前生效修订不同，提示“基于旧修订”，由用户确认。</li>
-    <li><strong>校验同提交：</strong>腔室属于机台、配方存在、同一腔室配方唯一、特征已发布。</li>
+    <li><strong>导出：</strong>按当前筛选条件导出<b>生效修订</b>；一个文件可包含多个算子。</li>
+    <li><strong>导入：</strong>先 <code>dry_run</code> 逐算子校验；确认后<b>每个算子生成一个待审核修订</b>，来源记为 <code>import</code>，仍需审核才生效。</li>
+    <li><strong>跳过与冲突：</strong>与生效修订完全一致的算子跳过；已有待审核修订的算子报冲突，不覆盖。</li>
+    <li><strong>基于旧修订：</strong><code>revision</code> 只作参考，与当前生效修订不同时提示“基于旧修订”。</li>
   </ul>
   </div>
   </div>
 
   <h3>审核后生效</h3>
   <div class="figure">
-  <svg viewBox="0 0 880 200" role="img" aria-label="提交后为待审核，审核通过生效并注册或更新 GDE 订阅、开始计算；退回或撤回则不生效">
+  <svg viewBox="0 0 880 200" role="img" aria-label="提交后为待审核，审核通过生效，重算涉及腔室的订阅范围并同步到 GDE；退回或撤回则不生效">
     <text x="115" y="44" font-size="11.5" text-anchor="middle" fill="#8A94AB">工程师 / Agent 提交</text>
     <path d="M115 52 V70" stroke="#A3AECB" stroke-width="2" marker-end="url(#ah)"/>
     <rect x="40" y="76" width="150" height="52" rx="16" fill="#EDF2FF" stroke="#A9BCFF" stroke-width="1.5"/>
@@ -1605,7 +1655,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
     <rect x="300" y="76" width="150" height="52" rx="16" fill="#E6F8F0" stroke="#74E3BC" stroke-width="1.5"/>
     <text x="375" y="107" font-size="15" font-weight="700" text-anchor="middle" fill="#22A87E">生效中</text>
     <rect x="560" y="70" width="290" height="64" rx="18" fill="url(#gEngine)"/>
-    <text x="705" y="98" font-size="13.5" font-weight="700" text-anchor="middle" fill="#fff">经 SDK 注册 / 更新订阅</text>
+    <text x="705" y="98" font-size="13.5" font-weight="700" text-anchor="middle" fill="#fff">按腔室汇总 recipe，同步 GDE 订阅</text>
     <text x="705" y="118" font-size="12" text-anchor="middle" fill="#fff" fill-opacity=".9">之后的执行开始计算</text>
     <rect x="40" y="152" width="150" height="40" rx="14" fill="#F1F3F8" stroke="#CDD3E1" stroke-width="1.5"/>
     <text x="115" y="177" font-size="13" font-weight="700" text-anchor="middle" fill="#8A94AB">已退回 / 已撤回</text>
@@ -1622,18 +1672,18 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
 
   <h3>绑定如何生效</h3>
   <ul>
-  <li><strong>一次执行命中一条规则：</strong>Redis 通知带有腔室和配方，按“腔室 + 配方”找到唯一的规则，计算其中列出的每个特征，每个特征调用一次 <code>fetch(run_id)</code> 和 <code>compute(data)</code>。</li>
-  <li><strong>校验：</strong>腔室必须属于所选机台；每条规则至少一个配方、一个特征；同一腔室中配方唯一；特征必须已发布。</li>
-  <li><strong>审核：</strong>每个腔室同时只有一个待审核修订；审核期间仍按原生效修订计算。</li>
-  <li><strong>订阅：</strong>腔室第一个修订审核通过时，调用 SDK 注册订阅（腔室 + 全部绑定的配方），返回的订阅 ID 记在修订上；之后配方有增减，审核通过时调用 SDK 更新订阅。</li>
-  <li><strong>修改后：</strong>新修订审核通过后，只对之后的执行生效。新增的特征或配方，历史数据不会自动计算，需要时到「调度」页补算。</li>
-  <li><strong>特征下线：</strong>系统自动从所有绑定中移除该特征，生成的新修订直接生效，待审核修订自动撤回；规则里没有特征了就删除该规则；腔室没有规则了就取消 GDE 订阅。</li>
+  <li><strong>一次执行可能算多个算子：</strong>Redis 通知带有腔室和 recipe，引擎找出所有生效绑定里包含这个“腔室 + recipe”的算子版本，每个算子调用一次 <code>fetch(run_id)</code> 和 <code>compute(data)</code>。</li>
+  <li><strong>校验：</strong>算子版本已发布；至少一个 recipe、recipe 不重复；每个 recipe 至少勾选一个腔室，且该腔室在 GDE 中跑过这个 recipe。</li>
+  <li><strong>审核：</strong>每个算子同时只有一个待审核修订；审核期间仍按原生效修订计算。</li>
+  <li><strong>订阅：</strong>GDE 订阅仍按腔室注册，订阅范围是所有生效算子绑定在该腔室上的 recipe 并集。绑定生效后在同一事务里重算范围，提交后同步到 GDE（新建 / 修改 / 取消订阅）；GDE 暂时不可用不影响审核结果，后台每分钟重试，调度页显示“未同步”和错误原因。</li>
+  <li><strong>修改后：</strong>新修订只对之后的执行生效。新增的 recipe 或腔室，历史数据不会自动计算，需要时到「调度」页补算。</li>
+  <li><strong>算子下线：</strong>若生效修订绑定的正是该版本，系统生成一个空的新修订直接生效，待审核修订自动撤回；腔室上没有算子要算了就取消 GDE 订阅。</li>
   </ul>
 </template>
 
 <!-- ======================= 设计说明：调度 ======================= -->
 <template id="doc-schedule">
-  <p class="lede">腔室绑定决定算什么；调度管理决定什么时候算：经 SDK 注册订阅，监听 Redis 上的执行结束通知，分发给计算引擎，并负责补算和重算。</p>
+  <p class="lede">算子绑定决定算什么；调度管理决定什么时候算：经 SDK 注册订阅，监听 Redis 上的执行结束通知，分发给计算引擎，并负责补算和重算。</p>
 
   <div class="figure">
   <svg viewBox="0 0 880 190" role="img" aria-label="经 SDK 注册订阅、GDE 往 Redis 写通知、fetch 经 SDK 按 run_id 取数、compute 计算并写入四个环节">
@@ -1711,7 +1761,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   <div class="table-wrap">
   <table>
   <tr><th>原因码</th><th>来源</th><th>含义</th></tr>
-  <tr><td><code>MISSING_SIGNAL</code>、<code>LOW_COVERAGE</code> 等</td><td>特征包 <code>raise Skip(...)</code></td><td>由特征作者定义，说明这次数据为什么不能算</td></tr>
+  <tr><td><code>MISSING_SIGNAL</code>、<code>LOW_COVERAGE</code> 等</td><td>算子代码 <code>raise Skip(...)</code></td><td>由算子作者定义，说明这次数据为什么不能算</td></tr>
   <tr><td><code>MISSING_DATA</code></td><td>fetch</td><td>GDE 中找不到该 run_id 或数据</td></tr>
   <tr><td><code>FETCH_ERROR</code></td><td>fetch</td><td>fetch 抛出了非 Skip 的异常；或消息超过最大投递次数</td></tr>
   <tr><td><code>FETCH_TIMEOUT</code></td><td>fetch</td><td>取数超时</td></tr>
@@ -1743,8 +1793,8 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   <tr><th>原因</th><th>处理方式</th></tr>
   <tr><td>GDE 源数据被修正</td><td>在「调度」页点“重算”，选择受影响的特征和时间段，重新取数计算</td></tr>
   <tr><td>取数异常<br><span class="muted">如 SDK 取数超时导致大量空值</span></td><td>问题解决后点“重算”，覆盖这段时间的空值</td></tr>
-  <tr><td>配方漏选</td><td>在腔室绑定中补上配方 → 在「调度」页“补算”</td></tr>
-  <tr><td>特征代码有误</td><td>已发布版本不能改，同一版本重算结果也不会变。正确做法：上传修复版本（如 <code>1.0.1</code>）→ 评审发布 → 在腔室绑定中把版本换成 1.0.1 → 补算出错时间段 → 下游切换后下线旧版本</td></tr>
+  <tr><td>recipe 或腔室漏选</td><td>在算子绑定中补上 → 在「调度」页“补算”</td></tr>
+  <tr><td>算子代码有误</td><td>已发布版本不能改，同一版本重算结果也不会变。正确做法：再次提交同名算子得到新版本（如 v2）→ 试跑、评审发布 → 在算子绑定中把版本换成 2 → 补算出错时间段 → 下游切换后下线旧版本</td></tr>
   </table>
   </div>
   <div class="note"><strong>重算不会丢失历史：</strong>旧的批次记录全部保留，能查到一个值在什么时候、因为什么原因被改过。</div>
@@ -1755,224 +1805,285 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
 
 <!-- ======================= 设计说明：结果 ======================= -->
 <template id="doc-results">
-  <p class="lede">每个特征值都关联一个计算批次，能查到特征版本、绑定修订、特征包 hash、run_id，以及是否被重算过。结果页顶部按机台、腔室、特征、时间筛选。</p>
-<pre><code><span class="c">GET /api/values?tool=ETCH-01&amp;chamber=CH-A01&amp;feature=gas_flow_diffmean@1.0.0&amp;from=2026-11-16&amp;to=2026-11-23</span>
-[{ <span class="k">"wafer"</span>: <span class="s">"W0301"</span>, <span class="k">"run_id"</span>: <span class="s">"RUN-0301"</span>, <span class="k">"recipe"</span>: <span class="s">"RCP-0432"</span>,
+  <p class="lede">每个特征值都关联一个计算批次，能查到算子版本、代码 hash、run_id，以及是否被重算过。结果页顶部按机台、腔室、特征 → 算子、时间筛选。</p>
+<pre><code><span class="c">GET /api/values?tool=ETCH-01&amp;chamber=CH-A01&amp;operator=gas_flow_diffmean/diffmean@2&amp;from=2026-11-16&amp;to=2026-11-23</span>
+[{ <span class="k">"feature_id"</span>: <span class="s">"gas_flow_diffmean"</span>, <span class="k">"operator"</span>: <span class="s">"diffmean"</span>, <span class="k">"version"</span>: 2,
+   <span class="k">"wafer"</span>: <span class="s">"W0301"</span>, <span class="k">"run_id"</span>: <span class="s">"RUN-0301"</span>, <span class="k">"recipe"</span>: <span class="s">"RCP-0432"</span>,
    <span class="k">"run_end_at"</span>: <span class="s">"2026-11-16T08:12:40+08:00"</span>, <span class="k">"value"</span>: 0.712,
    <span class="k">"reason"</span>: null, <span class="k">"batch_id"</span>: 1027, <span class="k">"retired"</span>: false }, …]</code></pre>
-  <p class="muted">空值带原因码；已下线版本的值仍然可以查询，<code>retired</code> 由 <code>feature.status</code> 实时得出，不存进值表。</p>
+  <p class="muted">空值带原因码；已下线算子的值仍然可以查询，<code>retired</code> 由 <code>operator.status</code> 实时得出，不存进值表。</p>
 
-  <h3>五张表，存放在 GDE 提供的 PostgreSQL 和 MinIO</h3>
+  <h3>七张表，存放在 GDE 提供的 PostgreSQL；算子文件存 MinIO</h3>
   <div class="figure">
-  <svg viewBox="0 0 880 430" role="img" aria-label="MinIO 存特征包文件；配置表包括 feature、chamber_binding 和 binding_item；结果表包括 feature_batch 和 feature_value">
-    <rect x="16" y="14" width="196" height="404" rx="22" fill="#FFF0F3"/>
+  <svg viewBox="0 0 880 470" role="img" aria-label="MinIO 存算子文件；配置表包括 feature、operator、operator_binding、binding_item、chamber_subscription；结果表包括 feature_batch 和 feature_value">
+    <rect x="16" y="14" width="196" height="444" rx="22" fill="#FFF0F3"/>
     <text x="114" y="40" font-size="12.5" text-anchor="middle" fill="#E5486A" font-weight="600">MinIO</text>
-    <rect x="240" y="14" width="260" height="404" rx="22" fill="#F1EDFF"/>
+    <rect x="240" y="14" width="260" height="444" rx="22" fill="#F1EDFF"/>
     <text x="370" y="40" font-size="12.5" text-anchor="middle" fill="#7C5CFF" font-weight="600">配置表 · PostgreSQL</text>
-    <rect x="528" y="14" width="336" height="404" rx="22" fill="#E6F8F0"/>
+    <rect x="528" y="14" width="336" height="444" rx="22" fill="#E6F8F0"/>
     <text x="696" y="40" font-size="12.5" text-anchor="middle" fill="#22A87E" font-weight="600">结果表 · PostgreSQL</text>
 
-    <g filter="url(#sh)"><rect x="34" y="70" width="160" height="96" rx="18" fill="url(#gCard)"/></g>
-    <rect x="50" y="86" width="30" height="30" rx="10" fill="url(#gMinio)"/>
-    <use href="#bucketIcon" transform="translate(65 101) scale(.62)"/>
-    <text x="90" y="106" font-size="13" font-weight="700" fill="#1D2433">特征包文件</text>
-    <text x="50" y="136" font-size="11.5" fill="#5D6880" font-family="monospace">feature.json</text>
-    <text x="50" y="154" font-size="11.5" fill="#5D6880" font-family="monospace">compute.py</text>
+    <g filter="url(#sh)"><rect x="34" y="120" width="160" height="96" rx="18" fill="url(#gCard)"/></g>
+    <rect x="50" y="136" width="30" height="30" rx="10" fill="url(#gMinio)"/>
+    <use href="#bucketIcon" transform="translate(65 151) scale(.62)"/>
+    <text x="90" y="156" font-size="13" font-weight="700" fill="#1D2433">算子文件</text>
+    <text x="50" y="186" font-size="11.5" fill="#5D6880" font-family="monospace">operator.json</text>
+    <text x="50" y="204" font-size="11.5" fill="#5D6880" font-family="monospace">{code_file}.py</text>
 
     <g font-family="monospace">
-    <g filter="url(#sh)"><rect x="258" y="56" width="224" height="128" rx="16" fill="url(#gCard)"/></g>
-    <text x="276" y="80" font-size="13.5" font-weight="700" fill="#7C5CFF">feature</text>
-    <text x="276" y="102" font-size="11" fill="#5D6880">id · version · status · spec</text>
-    <text x="276" y="120" font-size="11" fill="#5D6880">package_uri · package_hash</text>
-    <text x="276" y="138" font-size="11" fill="#5D6880">published_by · retired_by</text>
-    <text x="276" y="156" font-size="11" fill="#5D6880">created_at · submitted_at …</text>
-    <text x="276" y="174" font-size="11" fill="#F08A3C" font-weight="700">review_log</text>
+    <g filter="url(#sh)"><rect x="258" y="54" width="224" height="58" rx="16" fill="url(#gCard)"/></g>
+    <text x="276" y="76" font-size="13.5" font-weight="700" fill="#7C5CFF">feature</text>
+    <text x="276" y="98" font-size="11" fill="#5D6880">id · version · status · spec</text>
 
-    <g filter="url(#sh)"><rect x="258" y="198" width="224" height="118" rx="16" fill="url(#gCard)"/></g>
-    <text x="276" y="222" font-size="13.5" font-weight="700" fill="#7C5CFF">chamber_binding</text>
-    <text x="276" y="244" font-size="11" fill="#5D6880">chamber · revision · tool</text>
-    <text x="276" y="262" font-size="11" fill="#5D6880">spec · status · source</text>
-    <text x="276" y="280" font-size="11" fill="#5D6880">base_revision · gde_sub_id</text>
-    <text x="276" y="298" font-size="11" fill="#5D6880">reviewed_by · superseded_at</text>
+    <g filter="url(#sh)"><rect x="258" y="122" width="224" height="92" rx="16" fill="url(#gCard)"/></g>
+    <text x="276" y="144" font-size="13.5" font-weight="700" fill="#7C5CFF">operator</text>
+    <text x="276" y="164" font-size="11" fill="#5D6880">feature_id · name · version</text>
+    <text x="276" y="182" font-size="11" fill="#5D6880">code_file · code_hash</text>
+    <text x="276" y="200" font-size="11" fill="#F08A3C" font-weight="700">status · review_log</text>
 
-    <g filter="url(#sh)"><rect x="258" y="330" width="224" height="74" rx="16" fill="url(#gCard)"/></g>
-    <rect x="258" y="330" width="224" height="74" rx="16" fill="none" stroke="#B39CFF" stroke-width="1.5" stroke-dasharray="5 4"/>
-    <text x="276" y="354" font-size="13.5" font-weight="700" fill="#7C5CFF">binding_item <tspan font-size="10.5" fill="#22A87E" font-family="sans-serif">新增</tspan></text>
-    <text x="276" y="374" font-size="11" fill="#5D6880">chamber · revision · rule_no</text>
-    <text x="276" y="392" font-size="11" fill="#5D6880">recipe · feature_id · version</text>
+    <g filter="url(#sh)"><rect x="258" y="224" width="224" height="74" rx="16" fill="url(#gCard)"/></g>
+    <text x="276" y="246" font-size="13.5" font-weight="700" fill="#7C5CFF">operator_binding</text>
+    <text x="276" y="266" font-size="11" fill="#5D6880">feature_id · operator · revision</text>
+    <text x="276" y="284" font-size="11" fill="#5D6880">version · spec · status</text>
+
+    <g filter="url(#sh)"><rect x="258" y="308" width="224" height="58" rx="16" fill="url(#gCard)"/></g>
+    <text x="276" y="330" font-size="13.5" font-weight="700" fill="#7C5CFF">binding_item</text>
+    <text x="276" y="352" font-size="11" fill="#5D6880">… · recipe · chamber · tool</text>
+
+    <g filter="url(#sh)"><rect x="258" y="376" width="224" height="66" rx="16" fill="url(#gCard)"/></g>
+    <text x="276" y="398" font-size="13.5" font-weight="700" fill="#7C5CFF">chamber_subscription</text>
+    <text x="276" y="420" font-size="11" fill="#5D6880">chamber · recipes · gde_sub_id</text>
+    <text x="276" y="436" font-size="11" fill="#5D6880">synced_recipes · last_error</text>
 
     <g filter="url(#sh)"><rect x="560" y="56" width="272" height="160" rx="18" fill="url(#gCard)"/></g>
     <text x="578" y="84" font-size="13.5" font-weight="700" fill="#22A87E">feature_batch</text>
     <text x="578" y="108" font-size="11.5" fill="#5D6880">batch_id · mode · status</text>
-    <text x="578" y="126" font-size="11.5" fill="#5D6880">chamber · binding_revision</text>
-    <text x="578" y="144" font-size="11.5" fill="#5D6880">features · data_from · data_to</text>
+    <text x="578" y="126" font-size="11.5" fill="#5D6880">chamber · operators · plan</text>
+    <text x="578" y="144" font-size="11.5" fill="#5D6880">data_from · data_to</text>
     <text x="578" y="162" font-size="11.5" fill="#5D6880">reason · superseded_by</text>
     <text x="578" y="180" font-size="11.5" fill="#5D6880">run_total · value_ok · value_null</text>
     <text x="578" y="198" font-size="11.5" fill="#5D6880">created_by · started/finished_at</text>
 
-    <g filter="url(#sh)"><rect x="560" y="262" width="272" height="142" rx="18" fill="url(#gCard)"/></g>
+    <g filter="url(#sh)"><rect x="560" y="262" width="272" height="160" rx="18" fill="url(#gCard)"/></g>
     <text x="578" y="290" font-size="13.5" font-weight="700" fill="#22A87E">feature_value</text>
-    <text x="578" y="314" font-size="11.5" fill="#5D6880">feature_id · version · run_id</text>
-    <text x="578" y="332" font-size="11.5" fill="#5D6880">tool · chamber · recipe</text>
+    <text x="578" y="314" font-size="11.5" fill="#5D6880">feature_id · operator · version</text>
+    <text x="578" y="332" font-size="11.5" fill="#5D6880">run_id · tool · chamber · recipe</text>
     <text x="578" y="350" font-size="11.5" fill="#5D6880">lot · wafer · run_end_at</text>
     <text x="578" y="368" font-size="11.5" fill="#5D6880">value · reason · reason_detail</text>
     <text x="578" y="386" font-size="11.5" fill="#F08A3C" font-weight="700">batch_id <tspan fill="#5D6880" font-weight="400">· computed_at</tspan></text>
     </g>
 
-    <path d="M198 118 L252 92" stroke="#A3AECB" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round" marker-start="url(#ah)" marker-end="url(#ah)"/>
-    <text x="222" y="96" font-size="10.5" text-anchor="middle" fill="#8A94AB">uri</text>
-    <path d="M370 320 V326" stroke="#A3AECB" stroke-width="2.5" stroke-linecap="round" marker-end="url(#ah)"/>
-    <path d="M486 258 C520 258 520 128 554 126" fill="none" stroke="#A3AECB" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round" marker-end="url(#ah)"/>
+    <path d="M198 168 L252 168" stroke="#A3AECB" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round" marker-start="url(#ah)" marker-end="url(#ah)"/>
+    <text x="224" y="160" font-size="10.5" text-anchor="middle" fill="#8A94AB">hash</text>
+    <path d="M370 298 V304" stroke="#A3AECB" stroke-width="2.5" stroke-linecap="round" marker-end="url(#ah)"/>
+    <path d="M370 366 V372" stroke="#A3AECB" stroke-width="2.5" stroke-linecap="round" marker-end="url(#ah)"/>
+    <path d="M486 168 C520 168 520 300 554 316" fill="none" stroke="#A3AECB" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round" marker-end="url(#ah)"/>
     <path d="M696 256 L696 222" stroke="#F5B98A" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round" marker-end="url(#ah)"/>
     <text x="706" y="244" font-size="10.5" fill="#F08A3C">batch_id</text>
   </svg>
   </div>
 
-  <h3>这次检查后的调整</h3>
+  <h3>本次改动：特征 + 算子，按算子绑定</h3>
   <div class="table-wrap">
   <table class="nowrap-first">
-  <tr><th>表</th><th>补充</th><th>去掉 / 改名</th></tr>
-  <tr><td><code>feature</code></td><td><code>created_at</code>、<code>submitted_at</code>、<code>updated_at</code>；<code>retired_by</code>、<code>retired_at</code>（只有原因没有人和时间）；<code>review_log</code> 每条加 <code>trial_runs</code></td><td><code>reviewed_by/at</code> 改名 <code>published_by/at</code>：最后一次评审可能是退回，原名有歧义，完整记录看 <code>review_log</code>；desc、unit 从 <code>spec</code> 取，不另建列</td></tr>
-  <tr><td><code>chamber_binding</code></td><td><code>tool</code>（按机台筛选）；<code>source</code>（console / api / import / system）；<code>base_revision</code>（导入冲突提示）；<code>gde_sub_id</code>（SDK 返回的订阅 ID）；<code>superseded_at</code>；两个部分唯一索引保证“每腔室最多一个待审核、一个生效中”</td><td>—</td></tr>
-  <tr><td><code>binding_item</code></td><td><b>新增</b>：把 <code>spec</code> 展开成“修订 × 配方 × 特征”一行，随修订一起写入、不再修改</td><td>—</td></tr>
-  <tr><td><code>feature_batch</code></td><td><code>status</code>（queued / running / done / failed / cancelled）；<code>created_by</code>；<code>created_at</code>、<code>started_at</code>、<code>finished_at</code>；<code>run_total</code>、<code>value_ok</code>、<code>value_null</code>；<code>error</code></td><td>不存特征包 hash：特征版本发布后不可变，hash 从 <code>feature</code> 取</td></tr>
-  <tr><td><code>feature_value</code></td><td><b><code>run_end_at</code></b>（原表没有时间列，无法按时间查询和画图）；<code>tool</code>；<code>lot</code>；<code>reason_detail</code>（异常摘要）；<code>computed_at</code>；<code>value</code> 和 <code>reason</code> 二选一的约束</td><td>不存 <code>retired</code>、绑定修订、hash，都经 <code>batch_id</code> 或 <code>feature</code> 得到</td></tr>
+  <tr><th>表</th><th>变化</th></tr>
+  <tr><td><code>feature</code></td><td>只保留元数据（feature.json），去掉 <code>package_uri</code>、<code>package_hash</code>；部分唯一索引保证同一 feature_id 只有一个已发布版本</td></tr>
+  <tr><td><code>operator</code></td><td><b>新增</b>：(feature_id, name, version) 一行，version 为整数，同名再提交 +1；<code>code_file</code>（用户指定或 <code>{name}_v{version}.py</code>，同一特征内唯一）、<code>code_uri</code>、<code>code_hash</code>；评审 / 下线字段与 feature 相同</td></tr>
+  <tr><td><code>operator_binding</code></td><td><b>替代 chamber_binding</b>：修订以算子为单位，spec 为 {version, fleet, recipes: [{recipe, chambers}]}；不再存订阅 ID</td></tr>
+  <tr><td><code>binding_item</code></td><td>改为“修订 × recipe × 腔室”一行，带 tool 和算子 version；引擎按 (chamber, recipe) 查要算的算子</td></tr>
+  <tr><td><code>chamber_subscription</code></td><td><b>新增，替代 gde_outbox</b>：GDE 订阅仍按腔室，期望范围由绑定汇总，后台对账同步</td></tr>
+  <tr><td><code>feature_batch</code></td><td>去掉 <code>binding_revision</code>；<code>features</code> 改为 <code>operators</code>；新增 <code>plan</code> 快照；实时批次键改为 (chamber, 整点)</td></tr>
+  <tr><td><code>feature_value</code></td><td>主键改为 (feature_id, operator, version, run_id)，version 为整数</td></tr>
   </table>
   </div>
 
   <div class="table-wrap">
   <table>
   <tr><th>存储</th><th>内容</th><th>写入规则</th></tr>
-  <tr><td><code>feature</code></td><td>feature.json 原文、状态、提交 / 发布 / 下线的人和时间、特征包在 MinIO 的地址和 hash；<code>review_log</code>（JSONB）按顺序记录每次评审的结论、意见和试跑过的 run_id</td><td>进入待评审后内容锁定，只更新状态；每次评审追加一条 <code>review_log</code></td></tr>
-  <tr><td><code>chamber_binding</code></td><td>每个腔室的每一次绑定修订（JSON 原文）、机台、来源、审核状态、订阅 ID</td><td>每次提交或导入新增一行，审核时更新状态</td></tr>
-  <tr><td><code>binding_item</code></td><td>修订展开后的“配方 → 特征版本”明细</td><td>与 <code>chamber_binding</code> 同一事务写入，只增不改；用于筛选、下线影响范围、引擎按“腔室 + 配方”查规则</td></tr>
-  <tr><td><code>feature_batch</code></td><td>每个计算批次的类型、状态、腔室、绑定修订、特征、数据时间范围、原因、统计</td><td>每个批次一行；被重算覆盖时写入 <code>superseded_by</code></td></tr>
-  <tr><td><code>feature_value</code></td><td>每次执行（run_id）每个特征的值或原因码</td><td>主键唯一，重算时在事务内先删后插</td></tr>
-  <tr><td>MinIO</td><td><code>ei-feature-service/features/&lt;id&gt;/&lt;version&gt;/</code> 下的 feature.json 和 compute.py</td><td>发布后对象只读</td></tr>
+  <tr><td><code>feature</code></td><td>feature.json 原文、状态、提交 / 发布 / 下线的人和时间；<code>review_log</code></td><td>进入待评审后内容锁定，只更新状态；每次评审追加一条 <code>review_log</code></td></tr>
+  <tr><td><code>operator</code></td><td>operator.json 原文、代码文件名、MinIO 地址和 hash、状态；<code>review_log</code> 记录每次评审的结论、意见和试跑过的 run_id</td><td>同上；新增算子或同名算子的新版本各插入一行</td></tr>
+  <tr><td><code>operator_binding</code></td><td>每个算子的每一次绑定修订（JSON 原文）、绑定的算子版本、来源、审核状态</td><td>每次提交或导入新增一行，审核时更新状态</td></tr>
+  <tr><td><code>binding_item</code></td><td>修订展开后的“recipe × 腔室”明细</td><td>与 <code>operator_binding</code> 同一事务写入，只增不改；用于筛选、引擎按“腔室 + recipe”查算子、订阅范围汇总</td></tr>
+  <tr><td><code>chamber_subscription</code></td><td>每个腔室的期望订阅范围、GDE 订阅 ID、已同步范围、最近错误</td><td>绑定生效 / 算子下线时在同一事务里重算；同步成功后写 synced_*</td></tr>
+  <tr><td><code>feature_batch</code></td><td>每个计算批次的类型、状态、腔室、算子、recipe → 算子快照、数据时间范围、原因、统计</td><td>每个批次一行；被重算覆盖时写入 <code>superseded_by</code></td></tr>
+  <tr><td><code>feature_value</code></td><td>每次执行（run_id）每个算子版本的值或原因码</td><td>主键唯一，重算时在事务内先删后插</td></tr>
+  <tr><td>MinIO</td><td><code>ei-feature-service/features/&lt;feature_id&gt;/operators/&lt;name&gt;/&lt;version&gt;/</code> 下的 operator.json 和代码文件</td><td>发布后对象只读</td></tr>
   </table>
   </div>
 
-  <div class="file">schema.sql</div>
-<pre><code><span class="k">CREATE TABLE</span> feature (
-  feature_id    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
-  version       <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,   <span class="c">-- 语义化版本，如 1.0.1</span>
-  status        <span class="k">TEXT</span>        <span class="k">NOT NULL</span>    <span class="c">-- draft / review / published / retired</span>
-                <span class="k">CHECK</span> (status <span class="k">IN</span> (<span class="s">'draft'</span>, <span class="s">'review'</span>, <span class="s">'published'</span>, <span class="s">'retired'</span>)),
-  spec          <span class="k">JSONB</span>       <span class="k">NOT NULL</span>,   <span class="c">-- feature.json 原文（含 desc、unit）</span>
-  package_uri   <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
-  package_hash  <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,   <span class="c">-- sha256</span>
-  created_by    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
-  created_at    <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL DEFAULT</span> now(),
-  submitted_at  <span class="k">TIMESTAMPTZ</span>,
-  published_by  <span class="k">TEXT</span>,  published_at <span class="k">TIMESTAMPTZ</span>,
-  retired_by    <span class="k">TEXT</span>,  retired_at   <span class="k">TIMESTAMPTZ</span>,  retire_reason <span class="k">TEXT</span>,
-  review_log    <span class="k">JSONB</span>       <span class="k">NOT NULL DEFAULT</span> <span class="s">'[]'</span>,
-                <span class="c">-- [{decision, reviewer, comment, trial_runs: ["RUN-0338"], at}, …]</span>
-  updated_at    <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL DEFAULT</span> now(),
-  <span class="k">PRIMARY KEY</span> (feature_id, version)
-);
-
-<span class="k">CREATE TABLE</span> chamber_binding (
-  chamber       <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
-  revision      <span class="k">INT</span>         <span class="k">NOT NULL</span>,
-  tool          <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
-  spec          <span class="k">JSONB</span>       <span class="k">NOT NULL</span>,   <span class="c">-- 绑定 JSON 原文</span>
-  status        <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,   <span class="c">-- pending / active / rejected / withdrawn / superseded</span>
-  source        <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,   <span class="c">-- console / api / import / system</span>
-  base_revision <span class="k">INT</span>,                  <span class="c">-- 基于哪个生效修订修改</span>
-  gde_sub_id    <span class="k">TEXT</span>,                 <span class="c">-- SDK 注册订阅返回的 ID；状态以 GDE 为准</span>
-  created_by    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
-  created_at    <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL DEFAULT</span> now(),
-  reviewed_by   <span class="k">TEXT</span>,  reviewed_at <span class="k">TIMESTAMPTZ</span>,  review_note <span class="k">TEXT</span>,
-  superseded_at <span class="k">TIMESTAMPTZ</span>,
-  <span class="k">PRIMARY KEY</span> (chamber, revision)
-);
-<span class="k">CREATE UNIQUE INDEX</span> ON chamber_binding (chamber) <span class="k">WHERE</span> status = <span class="s">'pending'</span>;
-<span class="k">CREATE UNIQUE INDEX</span> ON chamber_binding (chamber) <span class="k">WHERE</span> status = <span class="s">'active'</span>;
-<span class="k">CREATE INDEX</span> ON chamber_binding (tool, status);
-
-<span class="k">CREATE TABLE</span> binding_item (
-  chamber    <span class="k">TEXT</span>     <span class="k">NOT NULL</span>,
-  revision   <span class="k">INT</span>      <span class="k">NOT NULL</span>,
-  rule_no    <span class="k">SMALLINT</span> <span class="k">NOT NULL</span>,
-  recipe     <span class="k">TEXT</span>     <span class="k">NOT NULL</span>,
-  feature_id <span class="k">TEXT</span>     <span class="k">NOT NULL</span>,
-  version    <span class="k">TEXT</span>     <span class="k">NOT NULL</span>,
-  <span class="k">PRIMARY KEY</span> (chamber, revision, recipe, feature_id),
-  <span class="k">FOREIGN KEY</span> (chamber, revision) <span class="k">REFERENCES</span> chamber_binding,
-  <span class="k">FOREIGN KEY</span> (feature_id, version) <span class="k">REFERENCES</span> feature
-);
-<span class="k">CREATE INDEX</span> ON binding_item (feature_id, version);
-<span class="k">CREATE INDEX</span> ON binding_item (recipe);
-
-<span class="k">CREATE TABLE</span> feature_batch (
-  batch_id         <span class="k">BIGSERIAL</span>   <span class="k">PRIMARY KEY</span>,
-  mode             <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,   <span class="c">-- live / fill / overwrite</span>
-  status           <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,   <span class="c">-- queued / running / done / failed / cancelled</span>
-  chamber          <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
-  binding_revision <span class="k">INT</span>         <span class="k">NOT NULL</span>,
-  features         <span class="k">JSONB</span>,                <span class="c">-- ["id@ver"]；live 为 NULL 表示绑定内全部</span>
-  data_from        <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span>,   <span class="c">-- 按执行结束时间</span>
-  data_to          <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span>,
-  reason           <span class="k">TEXT</span>,                 <span class="c">-- fill / overwrite 必填</span>
-  superseded_by    <span class="k">BIGINT</span> <span class="k">REFERENCES</span> feature_batch,
-  run_total        <span class="k">INT</span>, value_ok <span class="k">INT</span>, value_null <span class="k">INT</span>,
-  error            <span class="k">TEXT</span>,
-  created_by       <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,   <span class="c">-- live 为 system</span>
-  created_at       <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL DEFAULT</span> now(),
-  started_at       <span class="k">TIMESTAMPTZ</span>,  finished_at <span class="k">TIMESTAMPTZ</span>,
-  <span class="k">FOREIGN KEY</span> (chamber, binding_revision) <span class="k">REFERENCES</span> chamber_binding
-);
-<span class="k">CREATE INDEX</span> ON feature_batch (chamber, created_at);
-
-<span class="k">CREATE TABLE</span> feature_value (
+  <div class="file">schema.sql（与 src/model/schema.sql 一致）</div>
+<pre><code><span class="c">-- 特征：每个 (feature_id, version) 一行，只有元数据（feature.json），计算代码在算子里。</span>
+<span class="c">-- 同一 feature_id 同时最多一个 published 版本：新版本评审通过时旧的已发布版本自动下线。</span>
+<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> feature (
   feature_id    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   version       <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  status        <span class="k">TEXT</span>        <span class="k">NOT NULL</span> <span class="k">CHECK</span> (status <span class="k">IN</span> (<span class="s">'draft'</span>, <span class="s">'review'</span>, <span class="s">'published'</span>, <span class="s">'retired'</span>)),
+  spec          <span class="k">JSONB</span>       <span class="k">NOT NULL</span>,               <span class="c">-- feature.json 原文（id、version、desc、output.unit）</span>
+  created_by    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  created_at    <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> now(),
+  submitted_at  <span class="k">TIMESTAMPTZ</span>,
+  published_by  <span class="k">TEXT</span>,
+  published_at  <span class="k">TIMESTAMPTZ</span>,
+  retired_by    <span class="k">TEXT</span>,
+  retired_at    <span class="k">TIMESTAMPTZ</span>,
+  retire_reason <span class="k">TEXT</span>,
+  review_log    <span class="k">JSONB</span>       <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> <span class="s">'[]'</span>,  <span class="c">-- [{decision, reviewer, comment, trial_runs, at}]</span>
+  updated_at    <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> now(),
+  <span class="k">PRIMARY KEY</span> (feature_id, version)
+);
+<span class="k">CREATE UNIQUE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_one_published <span class="k">ON</span> feature (feature_id) <span class="k">WHERE</span> status = <span class="s">'published'</span>;
+
+<span class="c">-- 算子：挂在 feature_id 下（不随特征版本变化），同名算子再次提交时版本号 +1（整数，从 1 开始）。</span>
+<span class="c">-- 新增算子不改变特征版本；每个算子版本单独评审。</span>
+<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> operator (
+  feature_id    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  name          <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  version       <span class="k">INT</span>         <span class="k">NOT NULL</span>,
+  status        <span class="k">TEXT</span>        <span class="k">NOT NULL</span> <span class="k">CHECK</span> (status <span class="k">IN</span> (<span class="s">'draft'</span>, <span class="s">'review'</span>, <span class="s">'published'</span>, <span class="s">'retired'</span>)),
+  spec          <span class="k">JSONB</span>       <span class="k">NOT NULL</span>,               <span class="c">-- operator.json（name、desc，其他键原样保存）</span>
+  code_file     <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,               <span class="c">-- py 文件名：用户指定，或默认 {name}_v{version}.py</span>
+  code_uri      <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  code_hash     <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,               <span class="c">-- sha256(operator.json + "\n" + 代码)</span>
+  created_by    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  created_at    <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> now(),
+  submitted_at  <span class="k">TIMESTAMPTZ</span>,
+  published_by  <span class="k">TEXT</span>,
+  published_at  <span class="k">TIMESTAMPTZ</span>,
+  retired_by    <span class="k">TEXT</span>,
+  retired_at    <span class="k">TIMESTAMPTZ</span>,
+  retire_reason <span class="k">TEXT</span>,
+  review_log    <span class="k">JSONB</span>       <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> <span class="s">'[]'</span>,
+  updated_at    <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> now(),
+  <span class="k">PRIMARY KEY</span> (feature_id, name, version)
+);
+<span class="k">CREATE UNIQUE INDEX</span> <span class="k">IF NOT EXISTS</span> operator_code_file <span class="k">ON</span> operator (feature_id, code_file);
+
+<span class="c">-- 算子绑定：每个算子一套修订，每次提交 / 导入 / 系统修改都新增一个修订</span>
+<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> operator_binding (
+  feature_id    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  operator      <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  revision      <span class="k">INT</span>         <span class="k">NOT NULL</span>,
+  version       <span class="k">INT</span>         <span class="k">NOT NULL</span>,               <span class="c">-- 绑定的算子版本</span>
+  spec          <span class="k">JSONB</span>       <span class="k">NOT NULL</span>,               <span class="c">-- {feature_id, operator, version, fleet, recipes: [{recipe, chambers: [{tool, chamber}]}]}</span>
+  status        <span class="k">TEXT</span>        <span class="k">NOT NULL</span> <span class="k">CHECK</span> (status <span class="k">IN</span> (<span class="s">'pending'</span>, <span class="s">'active'</span>, <span class="s">'rejected'</span>, <span class="s">'withdrawn'</span>, <span class="s">'superseded'</span>)),
+  source        <span class="k">TEXT</span>        <span class="k">NOT NULL</span> <span class="k">CHECK</span> (source <span class="k">IN</span> (<span class="s">'console'</span>, <span class="s">'api'</span>, <span class="s">'import'</span>, <span class="s">'system'</span>)),
+  base_revision <span class="k">INT</span>,
+  created_by    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  created_at    <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> now(),
+  reviewed_by   <span class="k">TEXT</span>,
+  reviewed_at   <span class="k">TIMESTAMPTZ</span>,
+  review_note   <span class="k">TEXT</span>,
+  superseded_at <span class="k">TIMESTAMPTZ</span>,
+  <span class="k">PRIMARY KEY</span> (feature_id, operator, revision)
+);
+<span class="k">CREATE UNIQUE INDEX</span> <span class="k">IF NOT EXISTS</span> operator_binding_one_pending <span class="k">ON</span> operator_binding (feature_id, operator) <span class="k">WHERE</span> status = <span class="s">'pending'</span>;
+<span class="k">CREATE UNIQUE INDEX</span> <span class="k">IF NOT EXISTS</span> operator_binding_one_active  <span class="k">ON</span> operator_binding (feature_id, operator) <span class="k">WHERE</span> status = <span class="s">'active'</span>;
+
+<span class="c">-- 绑定明细：修订展开成 “配方 × 腔室” 一行，随修订写入、不再修改</span>
+<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> binding_item (
+  feature_id <span class="k">TEXT</span> <span class="k">NOT NULL</span>,
+  operator   <span class="k">TEXT</span> <span class="k">NOT NULL</span>,
+  revision   <span class="k">INT</span>  <span class="k">NOT NULL</span>,
+  recipe     <span class="k">TEXT</span> <span class="k">NOT NULL</span>,
+  chamber    <span class="k">TEXT</span> <span class="k">NOT NULL</span>,
+  tool       <span class="k">TEXT</span> <span class="k">NOT NULL</span>,
+  version    <span class="k">INT</span>  <span class="k">NOT NULL</span>,
+  <span class="k">PRIMARY KEY</span> (feature_id, operator, revision, recipe, chamber),
+  <span class="k">FOREIGN KEY</span> (feature_id, operator, revision) <span class="k">REFERENCES</span> operator_binding,
+  <span class="k">FOREIGN KEY</span> (feature_id, operator, version) <span class="k">REFERENCES</span> operator
+);
+<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> binding_item_chamber  <span class="k">ON</span> binding_item (chamber, recipe);
+<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> binding_item_operator <span class="k">ON</span> binding_item (feature_id, operator, version);
+
+<span class="c">-- 腔室订阅：GDE 订阅仍按腔室，recipes 由所有生效算子绑定按腔室汇总；</span>
+<span class="c">-- 与 synced_recipes 不一致（或需要订阅却没有 gde_sub_id）时由后台任务同步到 GDE</span>
+<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> chamber_subscription (
+  chamber        <span class="k">TEXT</span>        <span class="k">PRIMARY KEY</span>,
+  tool           <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  recipes        <span class="k">JSONB</span>       <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> <span class="s">'[]'</span>, <span class="c">-- 期望的订阅范围（排序去重）</span>
+  gde_sub_id     <span class="k">TEXT</span>,
+  synced_recipes <span class="k">JSONB</span>,                             <span class="c">-- 最近一次成功同步到 GDE 的范围</span>
+  attempts       <span class="k">INT</span>         <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> 0,    <span class="c">-- 连续同步失败次数</span>
+  last_error     <span class="k">TEXT</span>,
+  updated_at     <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> now(),
+  synced_at      <span class="k">TIMESTAMPTZ</span>
+);
+
+<span class="c">-- 计算批次：实时（按腔室 + 整点）、补算、重算</span>
+<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> feature_batch (
+  batch_id      <span class="k">BIGSERIAL</span>   <span class="k">PRIMARY KEY</span>,
+  mode          <span class="k">TEXT</span>        <span class="k">NOT NULL</span> <span class="k">CHECK</span> (mode <span class="k">IN</span> (<span class="s">'live'</span>, <span class="s">'fill'</span>, <span class="s">'overwrite'</span>)),
+  status        <span class="k">TEXT</span>        <span class="k">NOT NULL</span> <span class="k">CHECK</span> (status <span class="k">IN</span> (<span class="s">'queued'</span>, <span class="s">'running'</span>, <span class="s">'done'</span>, <span class="s">'failed'</span>, <span class="s">'cancelled'</span>)),
+  chamber       <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  operators     <span class="k">JSONB</span>,                              <span class="c">-- ["feature_id/operator@version"]；live 为 NULL 表示全部</span>
+  plan          <span class="k">JSONB</span>,                              <span class="c">-- 补算 / 重算创建时的快照 {recipe: [算子引用]}；live 为 NULL</span>
+  data_from     <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span>,               <span class="c">-- 按执行结束时间</span>
+  data_to       <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span>,
+  reason        <span class="k">TEXT</span>,
+  superseded_by <span class="k">BIGINT</span> <span class="k">REFERENCES</span> feature_batch,
+  run_total     <span class="k">INT</span>         <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> 0,
+  value_ok      <span class="k">INT</span>         <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> 0,
+  value_null    <span class="k">INT</span>         <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> 0,
+  error         <span class="k">TEXT</span>,
+  created_by    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  created_at    <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> now(),
+  started_at    <span class="k">TIMESTAMPTZ</span>,
+  finished_at   <span class="k">TIMESTAMPTZ</span>
+);
+<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_batch_chamber <span class="k">ON</span> feature_batch (chamber, created_at);
+<span class="k">CREATE UNIQUE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_batch_live_uq <span class="k">ON</span> feature_batch (chamber, data_from) <span class="k">WHERE</span> mode = <span class="s">'live'</span>;
+<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_batch_queue <span class="k">ON</span> feature_batch (status, batch_id) <span class="k">WHERE</span> status <span class="k">IN</span> (<span class="s">'queued'</span>, <span class="s">'running'</span>);
+
+<span class="c">-- 特征值：每次执行每个算子版本一行；value 与 reason 恰好一个非空</span>
+<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> feature_value (
+  feature_id    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  operator      <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
+  version       <span class="k">INT</span>         <span class="k">NOT NULL</span>,
   run_id        <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   tool          <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   chamber       <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   recipe        <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
-  lot           <span class="k">TEXT</span>,                 <span class="c">-- GDE 提供时填写</span>
+  lot           <span class="k">TEXT</span>,
   wafer         <span class="k">TEXT</span>,
-  run_end_at    <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span>,   <span class="c">-- 执行结束时间，查询和画图都按它</span>
+  run_end_at    <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span>,
   value         <span class="k">DOUBLE PRECISION</span>,
-  reason        <span class="k">TEXT</span>,                 <span class="c">-- 原因码</span>
-  reason_detail <span class="k">TEXT</span>,                 <span class="c">-- 异常摘要，最多 1 KB</span>
-  batch_id      <span class="k">BIGINT</span>      <span class="k">NOT NULL REFERENCES</span> feature_batch,
-  computed_at   <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL DEFAULT</span> now(),
+  reason        <span class="k">TEXT</span>,
+  reason_detail <span class="k">TEXT</span>,
+  batch_id      <span class="k">BIGINT</span>      <span class="k">NOT NULL</span> <span class="k">REFERENCES</span> feature_batch,
+  computed_at   <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> now(),
   <span class="k">CHECK</span> ((value <span class="k">IS NULL</span>) &lt;&gt; (reason <span class="k">IS NULL</span>)),
-  <span class="k">PRIMARY KEY</span> (feature_id, version, run_id)
+  <span class="k">PRIMARY KEY</span> (feature_id, operator, version, run_id)
 );
-<span class="k">CREATE INDEX</span> ON feature_value (chamber, feature_id, version, run_end_at);
-<span class="k">CREATE INDEX</span> ON feature_value (tool, run_end_at);
-<span class="k">CREATE INDEX</span> ON feature_value (wafer);
-<span class="k">CREATE INDEX</span> ON feature_value (batch_id);</code></pre>
+<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_value_chamber <span class="k">ON</span> feature_value (chamber, feature_id, operator, version, run_end_at);
+<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_value_tool    <span class="k">ON</span> feature_value (tool, run_end_at);
+<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_value_wafer   <span class="k">ON</span> feature_value (wafer);
+<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_value_batch   <span class="k">ON</span> feature_value (batch_id);</code></pre>
 
   <div class="cols">
   <div>
   <div class="file">追溯一个值</div>
 <pre><code><span class="k">SELECT</span> v.value, v.reason, v.run_id, v.run_end_at,
        b.mode, b.reason <span class="k">AS</span> batch_reason,
-       b.binding_revision, f.package_hash,
-       f.published_by
+       o.code_file, o.code_hash, o.published_by
 <span class="k">FROM</span>   feature_value v
 <span class="k">JOIN</span>   feature_batch b <span class="k">USING</span> (batch_id)
-<span class="k">JOIN</span>   feature f
-  <span class="k">ON</span>   f.feature_id = v.feature_id
- <span class="k">AND</span>   f.version    = v.version
+<span class="k">JOIN</span>   operator o
+  <span class="k">ON</span>   (o.feature_id, o.name, o.version)
+     = (v.feature_id, v.operator, v.version)
 <span class="k">WHERE</span>  v.wafer = <span class="s">'W0301'</span>
   <span class="k">AND</span>  v.feature_id = <span class="s">'gas_flow_diffmean'</span>;</code></pre>
-  <div class="file">特征在哪些腔室、配方上计算（筛选 / 下线影响范围）</div>
-<pre><code><span class="k">SELECT</span> c.tool, i.chamber, i.recipe, i.version
+  <div class="file">算子在哪些腔室、recipe 上计算</div>
+<pre><code><span class="k">SELECT</span> i.tool, i.chamber, i.recipe, i.version
 <span class="k">FROM</span>   binding_item i
-<span class="k">JOIN</span>   chamber_binding c <span class="k">USING</span> (chamber, revision)
-<span class="k">WHERE</span>  c.status = <span class="s">'active'</span>
-  <span class="k">AND</span>  i.feature_id = <span class="s">'gas_flow_diffmean'</span>;</code></pre>
+<span class="k">JOIN</span>   operator_binding b <span class="k">USING</span> (feature_id, operator, revision)
+<span class="k">WHERE</span>  b.status = <span class="s">'active'</span>
+  <span class="k">AND</span>  i.feature_id = <span class="s">'gas_flow_diffmean'</span>
+  <span class="k">AND</span>  i.operator = <span class="s">'diffmean'</span>;</code></pre>
   </div>
   <div>
-  <div class="note"><strong>订阅状态：</strong>只在 <code>chamber_binding.gde_sub_id</code> 记订阅 ID，运行 / 暂停 / 取消状态以 GDE 为准，调度管理经 SDK 查询和操作；处理进度取该腔室最近一个实时批次的 <code>data_to</code>。</div>
+  <div class="note"><strong>订阅状态：</strong><code>chamber_subscription</code> 记期望范围、订阅 ID 和已同步范围；运行 / 暂停 / 取消状态以 GDE 为准，调度管理经 SDK 查询和操作；处理进度取该腔室实时批次中最大的 <code>run_end_at</code>。</div>
   <div class="note"><strong>为什么分两处存：</strong>需要查询和关联的内容放 PostgreSQL；代码是文件，放 MinIO。两者都由 GDE 提供，数据库只保存文件地址和 hash。设备原始数据留在 GDE 的 ClickHouse，ei-feature-service 不复制。</div>
-  <div class="callout"><strong>数据量：</strong><code>feature_value</code> 每天约“执行数 × 特征数”行。上量后按 <code>run_end_at</code> 按月分区，届时主键需加上 <code>run_end_at</code>，去重改由写入前查询保证。</div>
+  <div class="callout"><strong>数据量：</strong><code>feature_value</code> 每天约“执行数 × 生效算子数”行。上量后按 <code>run_end_at</code> 按月分区，届时主键需加上 <code>run_end_at</code>，去重改由写入前查询保证。</div>
   <div class="callout"><strong>试跑不落库：</strong>试跑结果只返回页面，评审用到的 run_id 记在 <code>review_log.trial_runs</code>，不另建表。</div>
   </div>
   </div>
@@ -2181,8 +2292,8 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   });
 
   /* ---------- 切换 ---------- */
-  var names = { features: '特征', bindings: '腔室绑定', schedule: '调度', results: '结果' };
-  var defaultApi = { features: ['GET', '/api/features'], bindings: ['GET', '/api/chamber-bindings'], schedule: ['GET', '/api/schedules'], results: ['GET', '/api/values'] };
+  var names = { features: '特征', bindings: '算子绑定', schedule: '调度', results: '结果' };
+  var defaultApi = { features: ['GET', '/api/features'], bindings: ['GET', '/api/bindings'], schedule: ['GET', '/api/schedules'], results: ['GET', '/api/values'] };
   document.querySelectorAll('.demo-nav button').forEach(function (b) {
     b.addEventListener('click', function () {
       go(b.dataset.tab);
@@ -2271,7 +2382,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
     var u = state.uploads.shift();
     if (!u) return;
     var box = $('feat-check');
-    var steps = ['feature.json 格式正确', '定义了 fetch(run_id: str) 和 compute(data: dict)', 'compute.py 只导入允许的库', '特征包已存入 MinIO'];
+    var steps = ['feature.json / operator.json 格式正确', '定义了 fetch(run_id: str) 和 compute(data: dict)', '代码只导入允许的库', '算子文件已存入 MinIO'];
     box.hidden = false;
     box.innerHTML = '<div class="wait">正在检查 ' + u.id + '@' + u.ver + '（上传人 agent）…</div>';
     $('feat-upload').disabled = true;
@@ -2363,351 +2474,185 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
     };
   }
 
-  /* ---------- 3 腔室绑定 ---------- */
-  var ed = { ch: null, doc: null };
-  function startEdit(c) { var pd = pending(c); ed.ch = c; ed.doc = clone(pd ? pd.doc : curDoc(c)); }
-  function pubVersions() {
-    var m = {};
-    state.features.forEach(function (f) { if (f.status === 'pub') (m[f.id] = m[f.id] || []).push(f.ver); });
-    return m;
+  /* ---------- 3 算子绑定：fleet → 腔室 → recipe → 机台 / 腔室 ---------- */
+  var ed = { ch: null, doc: null };   // 旧“按腔室绑定”演示遗留，特征下线演示仍会引用
+  var FLEETS = { 'FLEET-ETCH-A': ['CH-A01', 'CH-A02'], 'FLEET-ETCH-B': ['CH-B02'] };
+  var ALL_RECIPES = uniqB([].concat.apply([], Object.keys(CHAMBERS).map(function (c) { return CHAMBERS[c]; }))).sort();
+  function uniqB(a) { return a.filter(function (x, i) { return a.indexOf(x) === i; }); }
+  function recipeChambers(r) { return Object.keys(CHAMBERS).filter(function (c) { return CHAMBERS[c].indexOf(r) >= 0; }); }
+  var OPS = [
+    { fid: 'gas_flow_diffmean', name: 'diffmean', vers: [1, 2], desc: '流量实际值与设定值之差的均值' },
+    { fid: 'gas_flow_diffmean', name: 'slope_mean', vers: [1], desc: '主刻蚀第 10~20 秒流量的平均变化率' },
+    { fid: 'pressure_std', name: 'std', vers: [1], desc: '腔室压力标准差' }
+  ];
+  var opKey = function (o) { return o.fid + '/' + o.name; };
+  var START = '2026-10-23';
+  var obind = {};   // opKey -> {revs: [{rev, st, doc, text, by, at}]}
+  OPS.forEach(function (o) { obind[opKey(o)] = { revs: [] }; });
+  (function seed() {
+    var d = { feature_id: 'gas_flow_diffmean', operator: 'diffmean', version: 1,
+      fleet: { name: 'FLEET-ETCH-A', start: START, end: TODAY },
+      recipes: [{ recipe: 'RCP-0432', chambers: [{ tool: 'ETCH-01', chamber: 'CH-A01' }, { tool: 'ETCH-01', chamber: 'CH-A02' }] }] };
+    obind['gas_flow_diffmean/diffmean'].revs.push({ rev: 1, st: 'active', doc: d, text: fmt(d), by: 'zhang', at: '11-02 10:20' });
+  })();
+  var ob = null;  // 编辑中的选择
+  function obActive(k) { return obind[k].revs.filter(function (r) { return r.st === 'active'; })[0]; }
+  function obPending(k) { return obind[k].revs.filter(function (r) { return r.st === 'pending'; })[0]; }
+  function curOp() { return OPS.filter(function (o) { return opKey(o) === ob.key; })[0]; }
+
+  function startOb(k) {
+    var src = obPending(k) || obActive(k), o = OPS.filter(function (x) { return opKey(x) === k; })[0];
+    ob = { key: k, ver: o.vers[o.vers.length - 1], fleet: '', start: START, end: TODAY, scope: {}, recipes: [], q: '', open: false };
+    if (src) {
+      var d = src.doc;
+      ob.ver = d.version;
+      if (d.fleet) { ob.fleet = d.fleet.name; ob.start = d.fleet.start; ob.end = d.fleet.end; }
+      (FLEETS[ob.fleet] || []).forEach(function (c) { ob.scope[c] = false; });
+      d.recipes.forEach(function (r) {
+        var on = {};
+        r.chambers.forEach(function (x) { on[x.chamber] = true; ob.scope[x.chamber] = true; });
+        ob.recipes.push({ recipe: r.recipe, on: on });
+      });
+    }
   }
-  function cleanDoc() {
-    var order = CHAMBERS[ed.ch];
+  function obDoc() {
+    var o = curOp();
     return {
-      tool: toolOf(ed.ch),
-      chamber: ed.ch,
-      rules: ed.doc.rules.map(function (r) {
-        return { recipes: order.filter(function (x) { return r.recipes.indexOf(x) >= 0; }), features: r.features };
+      feature_id: o.fid, operator: o.name, version: ob.ver,
+      fleet: ob.fleet ? { name: ob.fleet, start: ob.start, end: ob.end } : null,
+      recipes: ob.recipes.slice().sort(function (a, b) { return a.recipe < b.recipe ? -1 : 1; }).map(function (r) {
+        return { recipe: r.recipe, chambers: Object.keys(r.on).filter(function (c) { return r.on[c]; }).sort().map(function (c) { return { tool: toolOf(c), chamber: c }; }) };
       })
     };
   }
-  function ruleHtml(r, i, rules) {
-    var taken = {};
-    rules.forEach(function (x, j) { if (j !== i) x.recipes.forEach(function (rc) { taken[rc] = j + 1; }); });
-    var pv = pubVersions();
-    var h = '<div class="entry"><div class="entry-h">规则 ' + (i + 1) + '<button class="btn sm plain" data-del="' + i + '">删除规则</button></div>';
-    h += '<div class="lbl">配方：这些配方的每个执行都会计算下面勾选的特征</div><div class="chips">' +
-      CHAMBERS[ed.ch].map(function (rc) {
-        return '<button class="chip' + (r.recipes.indexOf(rc) >= 0 ? ' on' : '') + '" data-e="' + i + '" data-recipe="' + rc + '"' + (taken[rc] ? ' disabled title="已在规则 ' + taken[rc] + ' 中"' : '') + '>' + rc + '</button>';
-      }).join('') + '</div>';
-    var ids = Object.keys(pv);
-    Object.keys(r.features).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
-    h += '<div class="lbl">特征：只列出已发布的特征，按特征 ID 绑定并固定版本</div><table class="bt">' + (ids.length ? ids.map(function (id) {
-      var on = r.features[id] !== undefined, vers = pv[id] || [];
-      if (on && vers.indexOf(r.features[id]) < 0) vers = vers.concat([r.features[id]]);
-      var f = state.features.filter(function (x) { return x.id === id; })[0];
-      var ver = on ? '<select data-e="' + i + '" data-ver="' + id + '">' + vers.map(function (v) { return '<option' + (v === r.features[id] ? ' selected' : '') + '>' + v + '</option>'; }).join('') + '</select>'
-        : '<span class="empty" style="font-size:.76rem">' + vers.join(' / ') + '</span>';
-      return '<tr><td><button class="chip' + (on ? ' on' : '') + '" data-e="' + i + '" data-feat="' + id + '">' + (on ? '✓ ' : '') + id + '</button></td><td>' + ver + '<small>' + esc(f ? f.desc : '') + '</small></td></tr>';
-    }).join('') : '<tr><td class="empty">还没有已发布的特征</td></tr>') + '</table>';
-    return h + '</div>';
+  function drawOps() {
+    $('ob-ops').innerHTML = OPS.map(function (o) {
+      var k = opKey(o), a = obActive(k), p = obPending(k);
+      var st = p ? '<span class="tag review">待审核</span>' : a && a.doc.recipes.length ? '<span class="tag pub">生效中</span>' : '<span class="tag off">未绑定</span>';
+      return '<li' + (ob && ob.key === k ? ' class="sel"' : '') + ' data-op="' + k + '" style="cursor:pointer"><b><code>' + o.name + '</code></b> ' + st +
+        '<br><small>' + o.fid + ' · 已发布 v' + o.vers.join(' / v') + '</small></li>';
+    }).join('');
   }
-  function drawEditor() {
-    var rules = ed.doc.rules;
-    var h = rules.map(function (r, i) { return ruleHtml(r, i, rules); }).join('') ||
-      '<div class="empty" style="font-size:.82rem;margin:6px 0">' + ed.ch + ' 还没有绑定，不参与计算。新增一条规则开始。</div>';
-    h += '<button class="btn sm" data-add>+ 新增规则</button>';
+  function chamberChips(list, on, attr, extra) {
+    return list.map(function (c) {
+      return '<button class="chip' + (on[c] ? ' on' : '') + '" ' + attr + '="' + c + '"' + (extra || '') + '>' + (on[c] ? '✓ ' : '') + toolOf(c) + ' / ' + c + '</button>';
+    }).join('');
+  }
+  function drawOb() {
+    var o = curOp(), h = '';
+    h += '<div class="entry"><div class="entry-h">① 选 fleet 和时间范围</div><div class="filter" style="margin:0">' +
+      '<label>fleet <select id="ob-fleet"><option value="">请选择</option>' + Object.keys(FLEETS).map(function (f) { return '<option' + (f === ob.fleet ? ' selected' : '') + '>' + f + '</option>'; }).join('') + '</select></label>' +
+      '<label>从 <input id="ob-start" type="date" value="' + ob.start + '"></label><label>到 <input id="ob-end" type="date" value="' + ob.end + '"></label></div>';
+    if (ob.fleet) {
+      var cs = FLEETS[ob.fleet];
+      h += '<div class="lbl">GDE 返回该 fleet 在这段时间内有执行的腔室，默认全部勾选（' + cs.filter(function (c) { return ob.scope[c]; }).length + ' / ' + cs.length + '）</div><div class="chips">' + chamberChips(cs, ob.scope, 'data-scope') + '</div>';
+    }
+    h += '</div>';
+    h += '<div class="entry"><div class="entry-h">② 选 recipe（输入关键字自动过滤，点击加入）</div>';
+    if (!ob.fleet) h += '<div class="empty" style="font-size:.8rem">先选 fleet</div>';
+    else {
+      var added = ob.recipes.map(function (r) { return r.recipe; });
+      var cand = ALL_RECIPES.filter(function (r) { return added.indexOf(r) < 0 && r.toLowerCase().indexOf(ob.q.toLowerCase()) >= 0; }).slice(0, 8);
+      h += '<input id="ob-q" placeholder="例如 0432" value="' + esc(ob.q) + '" autocomplete="off" style="width:220px">' +
+        (ob.open ? '<div class="chips" style="margin-top:6px">' + (cand.length ? cand.map(function (r) { return '<button class="chip" data-add-recipe="' + r + '">+ ' + r + '</button>'; }).join('') : '<span class="empty" style="font-size:.78rem">没有匹配的 recipe</span>') + '</div>' : '');
+    }
+    h += '</div>';
+    h += '<div class="entry"><div class="entry-h">③ 已绑定 recipe：GDE 反查到的机台 / 腔室，默认全部勾选</div>';
+    h += ob.recipes.length ? ob.recipes.map(function (r, i) {
+      var all = recipeChambers(r.recipe), inScope = all.filter(function (c) { return ob.scope[c]; }), out = all.filter(function (c) { return !ob.scope[c]; });
+      return '<div style="margin:6px 0"><b><code>' + r.recipe + '</code></b> <button class="btn sm plain" data-del-recipe="' + i + '">移除</button><div class="chips">' +
+        (inScope.length ? chamberChips(inScope, r.on, 'data-rc', ' data-i="' + i + '"') : '<span class="empty" style="font-size:.78rem">fleet 勾选的腔室里没有跑过它的</span>') + '</div>' +
+        (out.length ? '<small class="muted">不在 fleet 范围（默认不勾选）：</small><div class="chips">' + chamberChips(out, r.on, 'data-rc', ' data-i="' + i + '"') + '</div>' : '') + '</div>';
+    }).join('') : '<div class="empty" style="font-size:.8rem">还没有 recipe</div>';
+    h += '</div>';
+    h += '<div class="entry"><div class="entry-h">④ 算子版本</div><select id="ob-ver">' + o.vers.map(function (v) { return '<option value="' + v + '"' + (v === ob.ver ? ' selected' : '') + '>v' + v + '</option>'; }).join('') + '</select> <small class="muted">默认最新已发布版本</small></div>';
     $('bind-editor').innerHTML = h;
-    refreshJson();
+    $('bind-title').innerHTML = '编辑 <code>' + ob.key + '</code> 的绑定 <small class="muted">' + esc(o.desc) + '</small>';
+    refreshOb();
+    var q = $('ob-q');
+    if (q && ob.open) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
   }
-  function refreshJson() {
-    var gen = fmt(cleanDoc());
+  function refreshOb() {
+    var gen = fmt(obDoc()), a = obActive(ob.key), p = obPending(ob.key);
     $('bind-json').textContent = gen;
-    var pd = pending(ed.ch);
-    $('bind-hint').textContent = pd ? (gen === pd.text ? '修订 ' + pd.rev + ' 待审核，审核通过后才开始计算' : '修订 ' + pd.rev + ' 待审核中，需先审核或撤回才能再提交')
-      : gen === curText(ed.ch) ? (rev(ed.ch) ? '与生效修订 ' + rev(ed.ch) + ' 一致' : '尚未提交过绑定')
-      : '有未提交的修改。提交后需审核，通过后只对新数据生效。';
-    $('bind-submit').disabled = !!pd;
-  }
-  var RST = { active: '<span class="tag pub">生效中</span>', pending: '<span class="tag review">待审核</span>', rejected: '<span class="tag redo">已退回</span>', withdrawn: '<span class="tag off">已撤回</span>', old: '<span class="tag off">已替代</span>' };
-  function drawHist() {
-    var list = state.bindings[ed.ch];
-    $('bind-hist').innerHTML = list.map(function (b, i) {
-      var act = b.st === 'pending' ? '<div class="hist-act"><button class="btn sm primary" data-rv="' + i + '">审核</button><button class="btn sm plain" data-wd="' + i + '">撤回</button></div>' : '';
-      var cmp = b.st !== 'active' && b.st !== 'pending' && active(ed.ch) ? '<br><button data-diff="' + i + '">与生效修订对比</button>' : '';
-      return '<li><b>修订 ' + b.rev + '</b> ' + RST[b.st] + '<br>提交：' + esc(b.by) + ' · ' + b.at +
-        (b.reviewer ? '<br>审核：' + esc(b.reviewer) + (b.rat ? ' · ' + b.rat : '') : '') + (b.note ? '<br><span class="hist-note">' + esc(b.note) + '</span>' : '') + cmp + act + '</li>';
+    $('bind-hint').textContent = p ? '修订 ' + p.rev + ' 待审核，审核通过后才开始计算'
+      : a && gen === a.text ? '与生效修订 ' + a.rev + ' 一致' : '有未提交的修改。提交后需他人审核，通过后只对新数据生效。';
+    $('bind-submit').disabled = !!p;
+    $('bind-approve').hidden = !p;
+    $('bind-hist').innerHTML = obind[ob.key].revs.map(function (r) {
+      return '<li><b>修订 ' + r.rev + '</b> ' + RST[r.st] + '<br><small>' + esc(r.by) + ' · ' + r.at + ' · ' + r.doc.recipes.length + ' 个 recipe · v' + r.doc.version + '</small></li>';
     }).join('') || '<li class="empty">还没有修订</li>';
   }
-  function diffHtml(oldText, newText, oldLabel, newLabel) {
-    var a = oldText.split('\n'), b = newText.split('\n'), out = [];
-    a.forEach(function (l) { if (b.indexOf(l) < 0) out.push('<div class="del">- ' + esc(l) + '</div>'); });
-    var lines = b.map(function (l) { return a.indexOf(l) < 0 ? '<div class="add">+ ' + esc(l) + '</div>' : '<div>  ' + esc(l) + '</div>'; });
-    return (out.length ? '<div class="sub">' + oldLabel + ' 中被删除或改动的行</div><div class="diff">' + out.join('') + '</div>' : '') +
-      '<div class="sub" style="margin-top:10px">' + newLabel + '</div><div class="diff">' + lines.join('') + '</div>';
-  }
-  function openBindReview(c, pd) {
-    var old = curDoc(c), sch = state.schedules[c];
-    var added = featsOf(pd.doc).filter(function (k) { return featsOf(old).indexOf(k) < 0; });
-    var removed = featsOf(old).filter(function (k) { return featsOf(pd.doc).indexOf(k) < 0; });
-    var recipeChanged = recipesOf(pd.doc) !== recipesOf(old);
-    var first = !sch || sch.status === 'stopped';
-    var html = '<div class="table-wrap"><table><tr><th>项目</th><th>内容</th></tr>' +
-      '<tr><td>提交</td><td>' + esc(pd.by) + ' · ' + pd.at + '</td></tr>' +
-      '<tr><td>新增特征</td><td>' + (added.length ? added.map(function (k) { return '<code>' + k + '</code>'; }).join(' ') : '无') + '</td></tr>' +
-      '<tr><td>移除特征</td><td>' + (removed.length ? removed.map(function (k) { return '<code>' + k + '</code>'; }).join(' ') : '无') + '</td></tr>' +
-      '<tr><td>通过后</td><td>' + (first ? '向 GDE 注册订阅，开始计算' : recipeChanged ? '更新 GDE 订阅的配方，按新修订计算' : '按新修订计算') + '</td></tr></table></div>' +
-      (active(c) ? diffHtml(curText(c), pd.text, '生效修订 ' + rev(c), '待审核修订 ' + pd.rev) : '<div class="sub">待审核修订 ' + pd.rev + '</div><pre>' + esc(pd.text) + '</pre>') +
-      '<h4 class="mh">审核意见（退回时必填）</h4><textarea id="br-note" placeholder="例如：RCP-1108 是返工配方，不需要计算"></textarea>';
-    var path = '/api/chamber-bindings/' + c + '/revisions/' + pd.rev + '/review';
-    openModal('审核 ' + c + ' · 修订 ' + pd.rev, html,
-      '<span class="mmsg" id="m-msg"></span><button class="btn plain" data-close>取消</button><button class="btn warn" id="br-reject">退回</button><button class="btn primary" id="br-approve">通过，开始计算</button>', true);
-    $('br-reject').onclick = function () {
-      var n = $('br-note').value.trim();
-      if (!n) return mmsg('退回时请填写审核意见');
-      pd.st = 'rejected'; pd.reviewer = 'engineer_zhang'; pd.rat = now(); pd.note = n;
-      closeModal(); startEdit(c); render.bindings();
-      api('POST', path, '已退回修订 ' + pd.rev + '，生效修订仍为 ' + (rev(c) || '无'));
-    };
-    $('br-approve').onclick = function () {
-      var a = active(c); if (a) a.st = 'old';
-      pd.st = 'active'; pd.reviewer = 'engineer_zhang'; pd.rat = now();
-      var n = $('br-note').value.trim(); if (n) pd.note = n;
-      var msg = '修订 ' + pd.rev + ' 已生效';
-      if (first) {
-        state.schedules[c] = { sub: 'gde-sub-00' + state.nextSub++, status: 'on', progress: '—' };
-        msg += '，已经 SDK 注册订阅 ' + state.schedules[c].sub + '，之后的执行开始计算';
-      } else if (recipeChanged) msg += '，已经 SDK 更新订阅的配方';
-      if (a && (added.length || recipeChanged)) msg += '；需要历史值请到「调度」页补算';
-      closeModal(); startEdit(c); render.bindings();
-      api('POST', path, msg);
-    };
-  }
-  /* 筛选：机台 → 腔室 → 配方 级联，再加特征、状态；表格每行是生效修订里的一条规则 */
-  var bf = { tool: '', chamber: '', recipe: '', feat: '', st: '' };
-  function opts(list, cur, all) {
-    return '<option value="">' + (all || '全部') + '</option>' + list.map(function (v) { return '<option' + (v === cur ? ' selected' : '') + '>' + v + '</option>'; }).join('');
-  }
-  function uniq(a) { return a.filter(function (x, i) { return a.indexOf(x) === i; }); }
-  function filteredChambers() {
-    return chambers().filter(function (c) {
-      if (bf.tool && toolOf(c) !== bf.tool) return false;
-      if (bf.chamber && c !== bf.chamber) return false;
-      if (bf.st === 'active' && !active(c)) return false;
-      if (bf.st === 'pending' && !pending(c)) return false;
-      if (bf.st === 'none' && active(c)) return false;
-      return true;
-    });
-  }
-  function ruleMatch(r) {
-    if (bf.recipe && r.recipes.indexOf(bf.recipe) < 0) return false;
-    if (bf.feat && r.features[bf.feat] === undefined) return false;
-    return true;
-  }
-  function drawFilter() {
-    var cs = bf.tool ? TOOLS[bf.tool] : chambers();
-    if (bf.chamber && cs.indexOf(bf.chamber) < 0) bf.chamber = '';
-    var rcs = uniq((bf.chamber ? [bf.chamber] : cs).reduce(function (o, c) { return o.concat(CHAMBERS[c]); }, [])).sort();
-    if (bf.recipe && rcs.indexOf(bf.recipe) < 0) bf.recipe = '';
-    var fs = uniq(state.features.filter(function (f) { return f.status === 'pub'; }).map(function (f) { return f.id; }));
-    $('bf-tool').innerHTML = opts(Object.keys(TOOLS), bf.tool);
-    $('bf-chamber').innerHTML = opts(cs, bf.chamber);
-    $('bf-recipe').innerHTML = opts(rcs, bf.recipe);
-    $('bf-feat').innerHTML = opts(fs, bf.feat);
-    $('bf-st').value = bf.st;
-  }
-  function drawRows() {
-    var rows = [], hit = 0, list = filteredChambers();
-    list.forEach(function (c) {
-      var a = active(c), pd = pending(c);
-      var st = (a ? RST.active : '<span class="tag off">未绑定</span>') + (pd ? ' ' + RST.pending : '');
-      var ops = '<button class="btn sm plain" data-edit="' + c + '">编辑</button>' + (pd ? ' <button class="btn sm primary" data-brv="' + c + '">审核</button>' : '');
-      var rules = a ? a.doc.rules.filter(ruleMatch) : [];
-      if (a && !rules.length) return;
-      if (!a && (bf.recipe || bf.feat)) return;
-      hit++;
-      var sel = c === ed.ch ? ' class="sel"' : '';
-      if (!rules.length) { rows.push('<tr' + sel + '><td>' + toolOf(c) + '</td><td>' + c + '</td><td>—</td><td class="empty">—</td><td class="empty">—</td><td>' + st + '</td><td class="ops">' + ops + '</td></tr>'); return; }
-      rules.forEach(function (r, i) {
-        var fs = Object.keys(r.features).map(function (id) { return '<code>' + id + '@' + r.features[id] + '</code>'; }).join('<br>');
-        rows.push('<tr' + sel + '><td>' + (i ? '' : toolOf(c)) + '</td><td>' + (i ? '' : c) + '</td><td>' + (i ? '' : a.rev) + '</td><td>' + r.recipes.join('、') + '</td><td>' + fs + '</td><td>' + (i ? '' : st) + '</td><td class="ops">' + (i ? '' : ops) + '</td></tr>');
-      });
-    });
-    $('bind-rows').innerHTML = rows.join('') || '<tr><td colspan="7" class="empty">没有符合筛选条件的绑定规则</td></tr>';
-    $('bf-count').textContent = hit + ' / ' + chambers().length + ' 个腔室';
-  }
-  function filterQuery() {
-    var q = Object.keys(bf).filter(function (k) { return bf[k]; }).map(function (k) { return ({ feat: 'feature', st: 'status' }[k] || k) + '=' + bf[k]; });
-    return q.length ? '?' + q.join('&') : '';
-  }
+  var RST = { active: '<span class="tag pub">生效中</span>', pending: '<span class="tag review">待审核</span>', old: '<span class="tag off">已替代</span>' };
   render.bindings = function () {
-    drawFilter(); drawRows();
-    var cur = ed.ch || filteredChambers()[0] || chambers()[0];
-    if (!ed.doc || ed.ch !== cur) startEdit(cur);
-    $('bind-title').innerHTML = '编辑区 · <b style="color:var(--fg)">' + toolOf(cur) + ' / ' + cur + '</b>（在上表点“编辑”切换腔室）';
-    drawEditor(); drawHist();
+    if (!ob) startOb(opKey(OPS[0]));
+    drawOps(); drawOb();
   };
-  ['tool', 'chamber', 'recipe', 'feat', 'st'].forEach(function (k) {
-    $('bf-' + k).addEventListener('change', function () {
-      bf[k] = this.value;
-      if (k === 'tool') { bf.chamber = ''; bf.recipe = ''; }
-      if (k === 'chamber') bf.recipe = '';
-      drawFilter(); drawRows();
-      api('GET', '/api/chamber-bindings' + filterQuery());
-    });
-  });
-  $('bf-clear').addEventListener('click', function () { bf = { tool: '', chamber: '', recipe: '', feat: '', st: '' }; drawFilter(); drawRows(); api('GET', '/api/chamber-bindings'); });
-  $('bind-rows').addEventListener('click', function (e) {
-    var t = e.target.closest('button');
-    if (!t) return;
-    if (t.dataset.edit) { startEdit(t.dataset.edit); render.bindings(); api('GET', '/api/chamber-bindings/' + t.dataset.edit); $('bind-title').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
-    else if (t.dataset.brv) { var c = t.dataset.brv; startEdit(c); render.bindings(); openBindReview(c, pending(c)); }
-  });
-
-  /* ---------- 导出 / 导入规则 ---------- */
-  function exportDoc(cs) {
-    return {
-      format: 'ei-feature-service.bindings/v1', exported_at: TODAY + 'T10:00:00+08:00',
-      bindings: cs.filter(function (c) { return active(c); }).map(function (c) { var a = active(c); return { tool: a.doc.tool, chamber: c, revision: a.rev, rules: a.doc.rules }; })
-    };
-  }
-  $('bind-export').addEventListener('click', function () {
-    var cs = filteredChambers(), doc = exportDoc(cs), text = JSON.stringify(doc, null, 2);
-    openModal('导出规则', '<p class="muted">按当前筛选条件导出 <b>' + doc.bindings.length + '</b> 个腔室的生效修订' + (cs.length > doc.bindings.length ? '（' + (cs.length - doc.bindings.length) + ' 个未绑定的腔室不导出）' : '') + '。导出的文件可以直接再导入。</p><pre id="ex-json">' + esc(text) + '</pre>',
-      '<span class="mmsg" id="m-msg" style="color:var(--mint)"></span><button class="btn plain" id="ex-copy">复制</button><button class="btn primary" id="ex-dl">下载 JSON</button>', true);
-    $('ex-copy').onclick = function () { try { navigator.clipboard.writeText(text).then(function () { mmsg('已复制'); }, function () { mmsg('无法访问剪贴板'); }); } catch (x) { mmsg('无法访问剪贴板'); } };
-    $('ex-dl').onclick = function () {
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-      a.download = 'ei-feature-service-bindings.json'; a.click();
-      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-    };
-    api('GET', '/api/chamber-bindings/export' + filterQuery(), '已导出 ' + doc.bindings.length + ' 个腔室');
-  });
-  function checkImport(text) {
-    var doc;
-    try { doc = JSON.parse(text); } catch (x) { return { err: 'JSON 格式错误：' + x.message }; }
-    if (!doc || doc.format !== 'ei-feature-service.bindings/v1' || !Array.isArray(doc.bindings)) return { err: '不是 ei-feature-service 导出的规则文件（format 应为 ei-feature-service.bindings/v1）' };
-    var pv = pubVersions(), seen = {};
-    return { items: doc.bindings.map(function (b) {
-      var c = b.chamber, r = { chamber: c || '?', tool: b.tool, act: 'error', msg: '' };
-      if (!CHAMBERS[c]) { r.msg = '腔室不存在'; return r; }
-      if (seen[c]) { r.msg = '文件中重复出现'; return r; }
-      seen[c] = 1;
-      if (toolOf(c) !== b.tool) { r.msg = '腔室不属于机台 ' + b.tool; return r; }
-      if (!Array.isArray(b.rules) || !b.rules.length) { r.msg = '至少需要一条规则'; return r; }
-      var used = {}, bad = '';
-      b.rules.forEach(function (rl, i) {
-        if (bad) return;
-        if (!rl.recipes || !rl.recipes.length) bad = '规则 ' + (i + 1) + ' 没有配方';
-        else if (!rl.features || !Object.keys(rl.features).length) bad = '规则 ' + (i + 1) + ' 没有特征';
-        (rl.recipes || []).forEach(function (rc) {
-          if (bad) return;
-          if (CHAMBERS[c].indexOf(rc) < 0) bad = '配方 ' + rc + ' 不在该腔室';
-          else if (used[rc]) bad = '配方 ' + rc + ' 出现在多条规则中';
-          used[rc] = 1;
-        });
-        Object.keys(rl.features || {}).forEach(function (id) { if (!bad && (pv[id] || []).indexOf(rl.features[id]) < 0) bad = id + '@' + rl.features[id] + ' 未发布'; });
-      });
-      if (bad) { r.msg = bad; return r; }
-      var clean = { tool: b.tool, chamber: c, rules: b.rules.map(function (rl) { return { recipes: CHAMBERS[c].filter(function (x) { return rl.recipes.indexOf(x) >= 0; }), features: rl.features }; }) };
-      r.doc = clean;
-      if (pending(c)) { r.act = 'conflict'; r.msg = '已有待审核修订 ' + pending(c).rev + '，不覆盖'; return r; }
-      if (fmt(clean) === curText(c)) { r.act = 'skip'; r.msg = '与生效修订一致，跳过'; return r; }
-      r.act = 'new';
-      r.msg = '生成修订 ' + (lastRev(c) + 1) + '（待审核）' + (b.revision && b.revision !== rev(c) ? '；注意：文件基于修订 ' + b.revision + '，当前生效 ' + (rev(c) || '无') : '');
-      return r;
-    }) };
-  }
-  $('bind-import').addEventListener('click', function () {
-    var sample = exportDoc(['CH-A01']);
-    sample.bindings.push({ tool: 'ETCH-01', chamber: 'CH-A02', revision: 0, rules: [{ recipes: ['RCP-0432', 'RCP-0433'], features: { gas_flow_diffmean: '1.0.0' } }] });
-    openModal('导入规则', '<p class="muted">上传导出的 JSON 文件，或直接粘贴。先校验（<code>dry_run</code>），确认后每个腔室生成一个<b>待审核修订</b>，审核通过才生效。</p>' +
-      '<div class="row"><input type="file" id="im-file" accept=".json,application/json"></div>' +
-      '<textarea id="im-text" style="min-height:220px;font-family:var(--mono);font-size:.78rem">' + esc(JSON.stringify(sample, null, 2)) + '</textarea><div class="imp-res" id="im-res"></div>',
-      '<span class="mmsg" id="m-msg"></span><button class="btn plain" data-close>取消</button><button class="btn" id="im-check">校验</button><button class="btn primary" id="im-ok" disabled>确认导入</button>');
-    var last = null;
-    $('im-file').onchange = function () {
-      var f = this.files[0]; if (!f) return;
-      var rd = new FileReader();
-      rd.onload = function () { $('im-text').value = rd.result; last = null; $('im-ok').disabled = true; $('im-res').innerHTML = ''; };
-      rd.readAsText(f);
-    };
-    $('im-text').oninput = function () { last = null; $('im-ok').disabled = true; };
-    var ACT = { 'new': '<span class="u-ok">新修订</span>', skip: '<span class="empty">跳过</span>', conflict: '<span class="u-bad">冲突</span>', error: '<span class="u-bad">错误</span>' };
-    $('im-check').onclick = function () {
-      var r = checkImport($('im-text').value);
-      api('POST', '/api/chamber-bindings/import?dry_run=true', r.err ? '校验失败' : '校验完成');
-      if (r.err) { last = null; $('im-ok').disabled = true; $('im-res').innerHTML = '<span class="u-bad">' + esc(r.err) + '</span>'; return; }
-      last = r.items;
-      var n = last.filter(function (x) { return x.act === 'new'; }).length;
-      $('im-res').innerHTML = '<div class="table-wrap"><table class="dt"><tr><th>机台</th><th>腔室</th><th>结果</th><th>说明</th></tr>' + last.map(function (x) {
-        return '<tr><td>' + esc(x.tool) + '</td><td>' + esc(x.chamber) + '</td><td>' + ACT[x.act] + '</td><td class="desc">' + esc(x.msg) + '</td></tr>';
-      }).join('') + '</table></div>';
-      $('im-ok').disabled = !n;
-      mmsg(n ? '' : '没有需要导入的腔室');
-    };
-    $('im-ok').onclick = function () {
-      if (!last) return;
-      var made = [];
-      last.forEach(function (x) {
-        if (x.act !== 'new') return;
-        state.bindings[x.chamber].unshift(rv(lastRev(x.chamber) + 1, '你（导入）', now(), x.doc, 'pending'));
-        made.push(x.chamber);
-      });
-      closeModal();
-      if (made.length) startEdit(made[0]);
-      render.bindings();
-      api('POST', '/api/chamber-bindings/import', '已导入：' + made.join('、') + ' 各生成一个待审核修订，审核通过后生效');
-    };
-  });
-  $('bind-editor').addEventListener('click', function (e) {
-    var t = e.target.closest('button');
-    if (!t || t.disabled) return;
-    var rules = ed.doc.rules, r = t.dataset.e !== undefined ? rules[+t.dataset.e] : null;
-    if (t.dataset.add !== undefined) rules.push({ recipes: [], features: {} });
-    else if (t.dataset.del !== undefined) rules.splice(+t.dataset.del, 1);
-    else if (t.dataset.recipe) {
-      var rc = t.dataset.recipe;
-      r.recipes = r.recipes.indexOf(rc) >= 0 ? r.recipes.filter(function (x) { return x !== rc; }) : r.recipes.concat([rc]);
-    } else if (t.dataset.feat) {
-      var id = t.dataset.feat, pv = pubVersions()[id] || [];
-      if (r.features[id] !== undefined) delete r.features[id];
-      else if (pv.length) r.features[id] = pv[pv.length - 1];
-      else return api('POST', '/api/chamber-bindings/' + ed.ch, id + ' 没有已发布版本', true);
-    } else return;
-    drawEditor();
+  $('ob-ops').addEventListener('click', function (e) {
+    var li = e.target.closest('[data-op]');
+    if (!li) return;
+    startOb(li.dataset.op); drawOps(); drawOb();
+    api('GET', '/api/bindings/' + li.dataset.op);
   });
   $('bind-editor').addEventListener('change', function (e) {
     var t = e.target;
-    if (!t.dataset.ver) return;
-    ed.doc.rules[+t.dataset.e].features[t.dataset.ver] = t.value;
-    refreshJson();
+    if (t.id === 'ob-fleet') {
+      ob.fleet = t.value; ob.scope = {}; ob.recipes = []; ob.q = '';
+      (FLEETS[ob.fleet] || []).forEach(function (c) { ob.scope[c] = true; });
+      drawOb();
+      if (ob.fleet) api('GET', '/api/gde/fleets/' + ob.fleet + '/chambers?start=' + ob.start + '&end=' + ob.end, '返回 ' + FLEETS[ob.fleet].length + ' 个腔室，已全部勾选');
+    } else if (t.id === 'ob-start' || t.id === 'ob-end') {
+      ob[t.id === 'ob-start' ? 'start' : 'end'] = t.value; refreshOb();
+      if (ob.fleet) api('GET', '/api/gde/fleets/' + ob.fleet + '/chambers?start=' + ob.start + '&end=' + ob.end);
+    } else if (t.id === 'ob-ver') { ob.ver = +t.value; refreshOb(); }
   });
-  $('bind-reset').addEventListener('click', function () { startEdit(ed.ch); drawEditor(); api('GET', '/api/chamber-bindings/' + ed.ch, '已恢复为当前修订'); });
-  $('bind-hist').addEventListener('click', function (e) {
-    var c = ed.ch, list = state.bindings[c], t;
-    if ((t = e.target.closest('[data-rv]'))) return openBindReview(c, list[+t.dataset.rv]);
-    if ((t = e.target.closest('[data-wd]'))) {
-      var w = list[+t.dataset.wd];
-      w.st = 'withdrawn'; startEdit(c); render.bindings();
-      return api('POST', '/api/chamber-bindings/' + c + '/revisions/' + w.rev + '/withdraw', '已撤回修订 ' + w.rev + '，可以修改后重新提交');
-    }
-    t = e.target.closest('[data-diff]');
+  $('bind-editor').addEventListener('input', function (e) {
+    if (e.target.id !== 'ob-q') return;
+    ob.q = e.target.value; ob.open = true; drawOb();
+    api('GET', '/api/gde/recipes?q=' + encodeURIComponent(ob.q));
+  });
+  $('bind-editor').addEventListener('focusin', function (e) {
+    if (e.target.id === 'ob-q' && !ob.open) { ob.open = true; drawOb(); }
+  });
+  $('bind-editor').addEventListener('click', function (e) {
+    var t = e.target.closest('button');
     if (!t) return;
-    var old = list[+t.dataset.diff], cur = active(c);
-    openModal(c + ' · 修订 ' + old.rev + ' → 生效修订 ' + cur.rev,
-      '<p class="muted">绿色为生效修订 ' + cur.rev + ' 中有、修订 ' + old.rev + ' 中没有的行。</p>' + diffHtml(old.text, cur.text, '修订 ' + old.rev, '生效修订 ' + cur.rev),
-      '<button class="btn primary" data-close>关闭</button>');
-    api('GET', '/api/chamber-bindings/' + c + '?revision=' + old.rev);
+    if (t.dataset.scope) {
+      var c = t.dataset.scope; ob.scope[c] = !ob.scope[c];
+      ob.recipes.forEach(function (r) { if (!ob.scope[c]) delete r.on[c]; });
+      drawOb();
+    } else if (t.dataset.addRecipe) {
+      var rc = t.dataset.addRecipe, on = {};
+      recipeChambers(rc).forEach(function (c) { if (ob.scope[c]) on[c] = true; });
+      ob.recipes.push({ recipe: rc, on: on }); ob.q = ''; ob.open = false;
+      drawOb();
+      api('GET', '/api/gde/recipes/' + rc + '/chambers', '反查到 ' + recipeChambers(rc).length + ' 个腔室，fleet 范围内的已全部勾选');
+    } else if (t.dataset.delRecipe !== undefined) {
+      ob.recipes.splice(+t.dataset.delRecipe, 1); drawOb();
+    } else if (t.dataset.rc) {
+      var r = ob.recipes[+t.dataset.i]; r.on[t.dataset.rc] = !r.on[t.dataset.rc]; drawOb();
+    }
   });
+  $('bind-reset').addEventListener('click', function () { startOb(ob.key); drawOb(); api('GET', '/api/bindings/' + ob.key, '已恢复为当前修订'); });
   $('bind-submit').addEventListener('click', function () {
-    var c = ed.ch, list = state.bindings[c], doc = cleanDoc(), text = fmt(doc);
-    var path = '/api/chamber-bindings/' + c;
-    if (pending(c)) return api('POST', path, '修订 ' + pending(c).rev + ' 待审核中，请先审核或撤回', true);
-    if (text === curText(c)) return api('POST', path, '内容没有变化', true);
-    if (!doc.rules.length) return api('POST', path, '至少需要一条规则；要停止计算请到「调度」页暂停', true);
-    var err = '';
-    doc.rules.forEach(function (r, i) {
-      if (err) return;
-      if (!r.recipes.length) err = '规则 ' + (i + 1) + ' 没有选择配方';
-      else if (!Object.keys(r.features).length) err = '规则 ' + (i + 1) + ' 没有勾选特征';
-    });
-    if (err) return api('POST', path, err, true);
-    list.unshift(rv(lastRev(c) + 1, '你', now(), doc, 'pending'));
-    startEdit(c);
-    render.bindings();
-    api('POST', path, '已提交修订 ' + lastRev(c) + '，等待审核；审核通过后才开始计算' + (rev(c) ? '，在此之前仍按修订 ' + rev(c) + ' 计算' : ''));
+    var doc = obDoc(), text = fmt(doc), path = '/api/bindings/' + ob.key, a = obActive(ob.key);
+    if (!doc.recipes.length) return api('POST', path, '至少选择一个 recipe', true);
+    var empty = doc.recipes.filter(function (r) { return !r.chambers.length; })[0];
+    if (empty) return api('POST', path, 'recipe ' + empty.recipe + ' 没有勾选腔室', true);
+    if (a && text === a.text) return api('POST', path, '与生效修订相同（NO_CHANGE）', true);
+    var list = obind[ob.key].revs;
+    list.unshift({ rev: (list.length ? list[0].rev : 0) + 1, st: 'pending', doc: doc, text: text, by: '你', at: now() });
+    drawOps(); refreshOb();
+    api('POST', path, '已提交修订 ' + list[0].rev + '，等待他人审核' + (a ? '；在此之前仍按修订 ' + a.rev + ' 计算' : ''));
+  });
+  $('bind-approve').addEventListener('click', function () {
+    var p = obPending(ob.key), a = obActive(ob.key);
+    if (!p) return;
+    if (a) a.st = 'old';
+    p.st = 'active'; p.by += '（审核人 li）';
+    var cs = uniqB([].concat.apply([], p.doc.recipes.map(function (r) { return r.chambers.map(function (x) { return x.chamber; }); })));
+    drawOps(); refreshOb();
+    api('POST', '/api/bindings/' + ob.key + '/revisions/' + p.rev + '/review', '已生效；重算 ' + cs.join('、') + ' 的订阅范围并同步到 GDE');
   });
 
   /* ---------- 4 调度 ---------- */
@@ -2960,7 +2905,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
       { key: 'app', title: '应用', sub: 'ei-feature-service', items: [
         T('定接口', 'REST API（特征、试跑、腔室绑定、规则导入导出、调度、批次、结果）及请求 / 响应模型；与数据底座确认 Redis 通知消息格式和 SDK 接口'),
         T('整体框架设计', 'main.py + src（api / service / engine / model / eifeature / util）、config/config.json、单进程同时跑 API 和后台计算、特征包运行沙箱'),
-        T('数据库表设计', 'feature、chamber_binding、binding_item、feature_batch、feature_value 五张表，索引与迁移脚本'),
+        T('数据库表设计', 'feature、operator、operator_binding、binding_item、chamber_subscription、feature_batch、feature_value 七张表与索引'),
         T('每个模块详细开发', '', [
           T('特征管理', '上传、自动检查、试跑、评审发布、下线'),
           T('腔室绑定', '筛选列表、机台 → 腔室 → 配方选择、生成 JSON、修订审核、规则导入导出'),

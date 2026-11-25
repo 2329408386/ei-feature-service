@@ -1,62 +1,80 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
-"""特征包上传校验：feature.json 格式 + compute.py 静态检查。返回全部错误，而不是遇到第一个就停。"""
+"""特征 / 算子提交内容校验：feature.json、operator.json 格式 + 算子代码静态检查。
+
+返回全部错误，而不是遇到第一个就停。错误项 {file, line, message}。
+"""
 
 import ast
-import json
 import re
 
 from src.util import semver
 
 ID = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
+CODE_FILE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}\.py$")
 CODE_MAX_BYTES = 256 * 1024
 ALLOWED_IMPORTS = {
     "eifeature", "math", "statistics", "numpy", "typing", "dataclasses", "functools", "itertools", "collections",
 }
 FORBIDDEN_NAMES = {"open", "exec", "eval", "compile", "__import__", "globals", "locals", "input", "breakpoint"}
+FEATURE_FILE, OPERATOR_FILE = "feature.json", "operator.json"
 
 
 def _err(file: str, message: str, line: int | None = None) -> dict:
     return {"file": file, "line": line, "message": message}
 
 
-def check_spec(raw: bytes) -> tuple[dict | None, list[dict]]:
-    """校验 feature.json，返回 (解析结果, 错误列表)；无法解析时解析结果为 None。"""
-    f = "feature.json"
-    try:
-        spec = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as e:
-        return None, [_err(f, f"不是合法的 UTF-8 JSON：{e}")]
-    if not isinstance(spec, dict):
-        return None, [_err(f, "顶层必须是对象")]
+def _check_desc(file: str, spec: dict) -> list[dict]:
+    desc = spec.get("desc")
+    if not isinstance(desc, str) or not 1 <= len(desc.strip()) <= 200:
+        return [_err(file, "desc 必填，1~200 字")]
+    return []
 
-    errors = []
+
+def check_feature_spec(spec: dict) -> list[dict]:
+    """校验 feature.json：id、version、desc、output.unit。"""
+    f, errors = FEATURE_FILE, []
     if not ID.match(str(spec.get("id", ""))):
         errors.append(_err(f, "id 必须是小写字母开头，由小写字母、数字、下划线组成，3~64 位"))
     if not semver.is_valid(str(spec.get("version", ""))):
         errors.append(_err(f, "version 必须形如 1.0.0"))
-    desc = spec.get("desc")
-    if not isinstance(desc, str) or not 1 <= len(desc.strip()) <= 200:
-        errors.append(_err(f, "desc 必填，1~200 字"))
-    unit = (spec.get("output") or {}).get("unit") if isinstance(spec.get("output"), dict) else None
+    errors += _check_desc(f, spec)
+    output = spec.get("output")
+    if output is not None and not isinstance(output, dict):
+        errors.append(_err(f, "output 必须是对象"))
+    unit = output.get("unit") if isinstance(output, dict) else None
     if unit is not None and (not isinstance(unit, str) or len(unit) > 32):
         errors.append(_err(f, "output.unit 必须是不超过 32 字的字符串"))
-    return spec, errors
+    return errors
 
 
-def check_code(raw: bytes) -> list[dict]:
-    """静态检查 compute.py：顶层 fetch / compute 签名、导入白名单、禁用的内置函数和双下划线属性。"""
-    f = "compute.py"
-    if len(raw) > CODE_MAX_BYTES:
-        return [_err(f, "文件超过 256 KB")]
+def check_operator_spec(spec: dict) -> list[dict]:
+    """校验 operator.json：name（命名规则同特征 id）、desc。"""
+    f, errors = OPERATOR_FILE, []
+    if not ID.match(str(spec.get("name", ""))):
+        errors.append(_err(f, "name 必须是小写字母开头，由小写字母、数字、下划线组成，3~64 位"))
+    return errors + _check_desc(f, spec)
+
+
+def check_code_file(code_file: str) -> list[dict]:
+    """用户指定的 py 文件名：字母或下划线开头，只含字母、数字、下划线，以 .py 结尾。"""
+    if CODE_FILE.match(code_file):
+        return []
+    return [_err("code_file", "文件名必须形如 my_operator.py：字母或下划线开头，只含字母、数字、下划线，最长 64 位")]
+
+
+def check_code(code: str, file: str = "compute.py") -> list[dict]:
+    """静态检查算子代码：顶层 fetch / compute 签名、导入白名单、禁用的内置函数和双下划线属性。"""
+    if len(code.encode("utf-8")) > CODE_MAX_BYTES:
+        return [_err(file, "文件超过 256 KB")]
     try:
-        tree = ast.parse(raw.decode("utf-8"))
-    except (UnicodeDecodeError, SyntaxError) as e:
-        return [_err(f, f"无法解析：{e}", getattr(e, "lineno", None))]
-    errors = _check_entrypoints(tree)
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return [_err(file, f"无法解析：{e}", e.lineno)]
+    errors = _check_entrypoints(tree, file)
     for node in ast.walk(tree):
-        errors += _check_node(node)
+        errors += _check_node(node, file)
     return errors
 
 
@@ -68,33 +86,34 @@ def _single_positional(fn: ast.FunctionDef) -> bool:
     return not (a.vararg or a.kwonlyargs or a.kwarg)
 
 
-def _check_entrypoints(tree: ast.Module) -> list[dict]:
+def _check_entrypoints(tree: ast.Module, file: str) -> list[dict]:
     """模块顶层必须有 fetch(run_id) 和 compute(data)。"""
-    f, errors = "compute.py", []
+    errors = []
     funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
     for name, param in (("fetch", "run_id"), ("compute", "data")):
         fn = funcs.get(name)
         if fn is None:
-            errors.append(_err(f, f"模块顶层缺少 def {name}({param})"))
+            errors.append(_err(file, f"模块顶层缺少 def {name}({param})"))
         elif not _single_positional(fn):
-            errors.append(_err(f, f"{name} 必须恰好有一个位置参数", fn.lineno))
+            errors.append(_err(file, f"{name} 必须恰好有一个位置参数", fn.lineno))
     return errors
 
 
-def _check_node(node: ast.AST) -> list[dict]:
+def _check_node(node: ast.AST, file: str) -> list[dict]:
     """单个语法节点：导入白名单、禁用名称、双下划线属性。"""
-    f = "compute.py"
     if isinstance(node, (ast.Import, ast.ImportFrom)):
         mods = [a.name for a in node.names] if isinstance(node, ast.Import) else [node.module or ""]
-        return [_err(f, f"不允许导入 {m}", node.lineno) for m in mods if m.split(".")[0] not in ALLOWED_IMPORTS]
+        return [_err(file, f"不允许导入 {m}", node.lineno) for m in mods if m.split(".")[0] not in ALLOWED_IMPORTS]
     if isinstance(node, ast.Name) and node.id in FORBIDDEN_NAMES:
-        return [_err(f, f"不允许使用 {node.id}", node.lineno)]
+        return [_err(file, f"不允许使用 {node.id}", node.lineno)]
     if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
-        return [_err(f, f"不允许访问双下划线属性 {node.attr}", node.lineno)]
+        return [_err(file, f"不允许访问双下划线属性 {node.attr}", node.lineno)]
     return []
 
 
-def check_package(spec_raw: bytes, code_raw: bytes) -> tuple[dict | None, list[dict]]:
-    """返回 (解析后的 feature.json, 错误列表)。"""
-    spec, errors = check_spec(spec_raw)
-    return spec, errors + check_code(code_raw)
+def check_operator(spec: dict, code: str, code_file: str | None) -> list[dict]:
+    """算子提交内容的全部错误：operator.json、文件名（指定时）、代码。"""
+    errors = check_operator_spec(spec)
+    if code_file is not None:
+        errors += check_code_file(code_file)
+    return errors + check_code(code, code_file or "compute.py")

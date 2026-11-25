@@ -5,7 +5,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKeyConstraint, Integer, SmallInteger, Text, func
+from sqlalchemy import BigInteger, DateTime, ForeignKeyConstraint, Integer, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -14,15 +14,16 @@ class Base(DeclarativeBase):
     type_annotation_map = {datetime: DateTime(timezone=True), dict: JSONB, list: JSONB}
 
 
-class Feature(Base):
-    __tablename__ = "feature"
+def op_ref(feature_id: str, operator: str, version: int) -> str:
+    """算子引用：feature_id/operator@version。"""
+    return f"{feature_id}/{operator}@{version}"
 
-    feature_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    version: Mapped[str] = mapped_column(Text, primary_key=True)
+
+class _Reviewed:
+    """特征和算子共用的评审 / 下线字段。"""
+
     status: Mapped[str]  # draft / review / published / retired
     spec: Mapped[dict]
-    package_uri: Mapped[str]
-    package_hash: Mapped[str]
     created_by: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     submitted_at: Mapped[datetime | None]
@@ -34,23 +35,46 @@ class Feature(Base):
     review_log: Mapped[list] = mapped_column(default=list)
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
+
+class Feature(_Reviewed, Base):
+    __tablename__ = "feature"
+
+    feature_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    version: Mapped[str] = mapped_column(Text, primary_key=True)
+
     @property
     def ref(self) -> str:
         """形如 id@version。"""
         return f"{self.feature_id}@{self.version}"
 
 
-class ChamberBinding(Base):
-    __tablename__ = "chamber_binding"
+class Operator(_Reviewed, Base):
+    __tablename__ = "operator"
 
-    chamber: Mapped[str] = mapped_column(Text, primary_key=True)
+    feature_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code_file: Mapped[str]
+    code_uri: Mapped[str]
+    code_hash: Mapped[str]
+
+    @property
+    def ref(self) -> str:
+        """形如 feature_id/name@version。"""
+        return op_ref(self.feature_id, self.name, self.version)
+
+
+class OperatorBinding(Base):
+    __tablename__ = "operator_binding"
+
+    feature_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    operator: Mapped[str] = mapped_column(Text, primary_key=True)
     revision: Mapped[int] = mapped_column(Integer, primary_key=True)
-    tool: Mapped[str]
+    version: Mapped[int]
     spec: Mapped[dict]
     status: Mapped[str]  # pending / active / rejected / withdrawn / superseded
     source: Mapped[str]  # console / api / import / system
     base_revision: Mapped[int | None]
-    gde_sub_id: Mapped[str | None]
     created_by: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     reviewed_by: Mapped[str | None]
@@ -62,15 +86,33 @@ class ChamberBinding(Base):
 class BindingItem(Base):
     __tablename__ = "binding_item"
     __table_args__ = (
-        ForeignKeyConstraint(["chamber", "revision"], ["chamber_binding.chamber", "chamber_binding.revision"]),
+        ForeignKeyConstraint(
+            ["feature_id", "operator", "revision"],
+            ["operator_binding.feature_id", "operator_binding.operator", "operator_binding.revision"],
+        ),
     )
 
-    chamber: Mapped[str] = mapped_column(Text, primary_key=True)
+    feature_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    operator: Mapped[str] = mapped_column(Text, primary_key=True)
     revision: Mapped[int] = mapped_column(Integer, primary_key=True)
     recipe: Mapped[str] = mapped_column(Text, primary_key=True)
-    feature_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    rule_no: Mapped[int] = mapped_column(SmallInteger)
-    version: Mapped[str]
+    chamber: Mapped[str] = mapped_column(Text, primary_key=True)
+    tool: Mapped[str]
+    version: Mapped[int]
+
+
+class ChamberSubscription(Base):
+    __tablename__ = "chamber_subscription"
+
+    chamber: Mapped[str] = mapped_column(Text, primary_key=True)
+    tool: Mapped[str]
+    recipes: Mapped[list] = mapped_column(default=list)
+    gde_sub_id: Mapped[str | None]
+    synced_recipes: Mapped[list | None]
+    attempts: Mapped[int] = mapped_column(default=0)
+    last_error: Mapped[str | None]
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+    synced_at: Mapped[datetime | None]
 
 
 class FeatureBatch(Base):
@@ -80,8 +122,8 @@ class FeatureBatch(Base):
     mode: Mapped[str]  # live / fill / overwrite
     status: Mapped[str]  # queued / running / done / failed / cancelled
     chamber: Mapped[str]
-    binding_revision: Mapped[int]
-    features: Mapped[list | None]
+    operators: Mapped[list | None]
+    plan: Mapped[dict | None]
     data_from: Mapped[datetime]
     data_to: Mapped[datetime]
     reason: Mapped[str | None]
@@ -100,7 +142,8 @@ class FeatureValue(Base):
     __tablename__ = "feature_value"
 
     feature_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    version: Mapped[str] = mapped_column(Text, primary_key=True)
+    operator: Mapped[str] = mapped_column(Text, primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
     run_id: Mapped[str] = mapped_column(Text, primary_key=True)
     tool: Mapped[str]
     chamber: Mapped[str]
@@ -113,15 +156,3 @@ class FeatureValue(Base):
     reason_detail: Mapped[str | None]
     batch_id: Mapped[int] = mapped_column(BigInteger)
     computed_at: Mapped[datetime] = mapped_column(server_default=func.now())
-
-
-class GdeOutbox(Base):
-    __tablename__ = "gde_outbox"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    action: Mapped[str]  # update_subscription / cancel_subscription
-    payload: Mapped[dict]
-    attempts: Mapped[int] = mapped_column(default=0)
-    last_error: Mapped[str | None]
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    done_at: Mapped[datetime | None]

@@ -9,7 +9,8 @@ from typing import Generic, Literal, TypeVar
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 T = TypeVar("T")
-EXPORT_FORMAT = "ei-feature-service.bindings/v1"
+EXPORT_FORMAT = "ei-feature-service.bindings/v2"
+Status = Literal["draft", "review", "published", "retired"]
 
 
 class Out(BaseModel):
@@ -23,7 +24,7 @@ class Page(BaseModel, Generic[T]):
     page_size: int
 
 
-# ---------------------------------------------------------------- 特征
+# ---------------------------------------------------------------- 特征与算子共用
 class ReviewEntry(BaseModel):
     decision: Literal["approve", "reject"]
     reviewer: str
@@ -32,12 +33,19 @@ class ReviewEntry(BaseModel):
     at: datetime
 
 
-class FeatureOut(Out):
-    feature_id: str
-    version: str
-    status: Literal["draft", "review", "published", "retired"]
+class ReviewIn(BaseModel):
+    decision: Literal["approve", "reject"]
+    comment: str | None = None
+    trial_runs: list[str] = []  # 算子评审通过时必填；特征评审不需要
+
+
+class RetireIn(BaseModel):
+    reason: str = Field(min_length=1)
+
+
+class _Reviewed(Out):
+    status: Status
     spec: dict
-    package_hash: str
     created_by: str
     created_at: datetime
     submitted_at: datetime | None
@@ -50,39 +58,43 @@ class FeatureOut(Out):
 
     @computed_field
     def description(self) -> str:
-        """特征描述，取自 feature.json 的 desc。"""
+        """描述，取自 spec.desc。"""
         return self.spec.get("desc", "")
 
+
+# ---------------------------------------------------------------- 算子
+class OperatorOut(_Reviewed):
+    feature_id: str
+    name: str
+    version: int
+    code_file: str
+    code_hash: str
+
     @computed_field
-    def unit(self) -> str | None:
-        """输出单位，取自 feature.json 的 output.unit。"""
-        output = self.spec.get("output")
-        return output.get("unit") if isinstance(output, dict) else None
+    def ref(self) -> str:
+        """算子引用 feature_id/name@version。"""
+        return f"{self.feature_id}/{self.name}@{self.version}"
 
 
-class FeatureDetail(FeatureOut):
+class OperatorDetail(OperatorOut):
     code: str
 
 
-class FeatureReviewIn(BaseModel):
-    decision: Literal["approve", "reject"]
-    comment: str | None = None
-    trial_runs: list[str] = []
+class OperatorIn(BaseModel):
+    """新增算子（或同名算子的新版本）：直接填 operator.json 和代码。"""
+
+    feature_id: str
+    spec: dict  # operator.json：name、desc 必填
+    code: str = Field(min_length=1)
+    code_file: str | None = None  # 不填时为 {name}_v{version}.py
 
 
-class RetireIn(BaseModel):
-    reason: str = Field(min_length=1)
-
-
-class RetireAffected(BaseModel):
-    chamber: str
-    new_revision: int
-    subscription: Literal["kept", "cancelled"]
-
-
-class RetireOut(BaseModel):
-    feature: FeatureOut
-    affected: list[RetireAffected]
+class OperatorRetired(BaseModel):
+    feature_id: str
+    operator: str
+    version: int
+    new_revision: int | None  # 生成的 system 修订；该算子没有生效绑定时为 null
+    chambers: list[str]  # 不再计算该算子的腔室
 
 
 class TrialIn(BaseModel):
@@ -109,16 +121,58 @@ class TrialOut(BaseModel):
     compute_ms: int
 
 
-# ---------------------------------------------------------------- 腔室绑定
-class Rule(BaseModel):
-    recipes: list[str]
-    features: dict[str, str]  # feature_id -> version
+class OperatorRetireOut(BaseModel):
+    operator: OperatorOut
+    affected: list[OperatorRetired]
+
+
+# ---------------------------------------------------------------- 特征
+class FeatureOut(_Reviewed):
+    feature_id: str
+    version: str
+
+    @computed_field
+    def unit(self) -> str | None:
+        """输出单位，取自 feature.json 的 output.unit。"""
+        output = self.spec.get("output")
+        return output.get("unit") if isinstance(output, dict) else None
+
+
+class FeatureDetail(FeatureOut):
+    operators: list[OperatorOut]  # 该 feature_id 下全部算子（各版本）
+
+
+class FeatureRetireOut(BaseModel):
+    feature: FeatureOut
+    operators: list[str]  # 随特征一起下线的算子引用
+    affected: list[OperatorRetired]
+
+
+# ---------------------------------------------------------------- 算子绑定
+class BindingChamber(BaseModel):
+    tool: str
+    chamber: str
+
+
+class BindingRecipe(BaseModel):
+    recipe: str
+    chambers: list[BindingChamber]
+
+
+class FleetScope(BaseModel):
+    """选腔室时用的 fleet 和时间范围，只保存下来用于页面回显，不参与计算。"""
+
+    name: str
+    start: date
+    end: date
 
 
 class BindingSpec(BaseModel):
-    tool: str
-    chamber: str
-    rules: list[Rule]
+    feature_id: str
+    operator: str
+    version: int
+    fleet: FleetScope | None = None
+    recipes: list[BindingRecipe]
 
 
 class BindingSubmitIn(BindingSpec):
@@ -126,14 +180,14 @@ class BindingSubmitIn(BindingSpec):
 
 
 class RevisionOut(Out):
-    chamber: str
+    feature_id: str
+    operator: str
     revision: int
-    tool: str
+    version: int
     spec: BindingSpec
     status: Literal["pending", "active", "rejected", "withdrawn", "superseded"]
     source: Literal["console", "api", "import", "system"]
     base_revision: int | None
-    gde_sub_id: str | None
     created_by: str
     created_at: datetime
     reviewed_by: str | None
@@ -142,15 +196,16 @@ class RevisionOut(Out):
     superseded_at: datetime | None
 
 
-class ChamberBindingOut(BaseModel):
-    tool: str
-    chamber: str
+class OperatorBindingOut(BaseModel):
+    feature_id: str
+    operator: str
     active: RevisionOut | None
     pending: RevisionOut | None
 
 
-class ChamberRevisionsOut(BaseModel):
-    chamber: str
+class OperatorRevisionsOut(BaseModel):
+    feature_id: str
+    operator: str
     revisions: list[RevisionOut]
 
 
@@ -159,30 +214,17 @@ class RevisionReviewIn(BaseModel):
     comment: str | None = None
 
 
-class ExportItem(BaseModel):
-    tool: str
-    chamber: str
-    revision: int | None = None
-    rules: list[Rule]
-
-
-class ExportDoc(BaseModel):
-    format: Literal["ei-feature-service.bindings/v1"] = EXPORT_FORMAT
-    exported_at: datetime | None = None
-    bindings: list[ExportItem]
-
-
 class ImportDoc(BaseModel):
-    """导入时每个腔室单独校验，所以 bindings 先按原样接收。"""
+    """导入时每个算子单独校验，所以 bindings 先按原样接收。"""
 
-    format: Literal["ei-feature-service.bindings/v1"]
+    format: Literal["ei-feature-service.bindings/v2"]
     exported_at: datetime | None = None
     bindings: list[dict]
 
 
 class ImportItemOut(BaseModel):
-    tool: str | None
-    chamber: str | None
+    feature_id: str | None
+    operator: str | None
     action: Literal["new", "skip", "conflict", "error"]
     message: str
     revision: int | None = None
@@ -193,13 +235,21 @@ class ImportOut(BaseModel):
     items: list[ImportItemOut]
 
 
+# ---------------------------------------------------------------- GDE 元数据（转发）
+class ToolChamberOut(BaseModel):
+    tool: str
+    chamber: str
+
+
 # ---------------------------------------------------------------- 调度、批次、特征值
 class ScheduleOut(BaseModel):
     tool: str
     chamber: str
     gde_sub_id: str | None
-    binding_revision: int
-    feature_count: int
+    recipes: list[str]
+    operator_count: int
+    synced: bool  # GDE 订阅范围是否已与 recipes 一致
+    last_error: str | None
     status: Literal["running", "paused", "cancelled", "unknown"]
     progress: datetime | None
 
@@ -209,7 +259,7 @@ class BatchIn(BaseModel):
 
     chamber: str
     mode: Literal["fill", "overwrite"]
-    features: list[str] = Field(min_length=1)  # ["id@ver"]
+    operators: list[str] = Field(min_length=1)  # ["feature_id/operator@version"]
     from_: date = Field(alias="from")
     to: date
     reason: str = Field(min_length=1)
@@ -220,8 +270,8 @@ class BatchOut(Out):
     mode: Literal["live", "fill", "overwrite"]
     status: Literal["queued", "running", "done", "failed", "cancelled"]
     chamber: str
-    binding_revision: int
-    features: list[str] | None
+    operators: list[str] | None
+    plan: dict[str, list[str]] | None
     data_from: datetime
     data_to: datetime
     reason: str | None
@@ -238,7 +288,8 @@ class BatchOut(Out):
 
 class ValueOut(Out):
     feature_id: str
-    version: str
+    operator: str
+    version: int
     run_id: str
     tool: str
     chamber: str

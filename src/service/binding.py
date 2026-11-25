@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
-"""腔室绑定：校验、提交、审核、撤回、查询、导入导出，以及特征下线时的自动修改。
+"""算子绑定：校验、提交、审核、撤回、查询、导入导出，以及算子下线时的自动修改。
+
+绑定以算子为单位：一个算子（feature_id + 名称）一套修订，修订内容是
+{feature_id, operator, version, fleet, recipes: [{recipe, chambers: [{tool, chamber}]}]}，
+即“该算子版本在哪些腔室的哪些 recipe 上计算”。
 
 修订状态：(新建) -> pending --approve(他人)--> active（原 active -> superseded）
                    pending --reject(他人)--> rejected / --withdraw(本人)--> withdrawn
-source=system 的修订（特征下线时生成）直接以 active 插入。
+source=system 的修订（算子下线时生成）直接以 active 插入。
+修订生效 / 被替换后，涉及腔室的订阅范围在同一事务里重算，提交后同步到 GDE（见 subscription.py）。
 """
 
 import asyncio
-import copy
 
 from pydantic import ValidationError
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import func, select
 
 from src.api.schemas import EXPORT_FORMAT, BindingSpec
-from src.model.tables import BindingItem, ChamberBinding, Feature, GdeOutbox
+from src.model.tables import BindingItem, Operator, OperatorBinding
+from src.service import subscription
 from src.util import db
 from src.util.auth import SYSTEM
 from src.util.errors import (
@@ -28,33 +33,34 @@ from src.util.errors import (
     invalid_state,
     not_found,
 )
-from src.util.gde import GdeError, get_gde
+from src.util.gde import GdeError, GdeNotFound, get_gde
 from src.util.timeutil import now
 
 
 # ---------------------------------------------------------------- 小工具
-def recipes_of(spec: dict) -> list[str]:
-    """spec 中全部规则的配方，去重排序（即订阅范围）。"""
-    return sorted({r for rule in spec["rules"] for r in rule["recipes"]})
+def chambers_of(spec: dict) -> set[str]:
+    """spec 中出现的全部腔室。"""
+    return {c["chamber"] for r in spec["recipes"] for c in r["chambers"]}
 
 
-def features_of(spec: dict) -> set[str]:
-    """spec 中全部规则的特征，形如 id@version。"""
-    return {f"{fid}@{ver}" for rule in spec["rules"] for fid, ver in rule["features"].items()}
+def recipes_on(spec: dict, chamber: str) -> list[str]:
+    """spec 中该腔室要计算的 recipe，排序。"""
+    return sorted(r["recipe"] for r in spec["recipes"] if any(c["chamber"] == chamber for c in r["chambers"]))
 
 
-def _normalize(spec: BindingSpec, recipe_order: list[str]) -> dict:
-    """规范化：配方按 GDE 返回的顺序，特征按 ID 排序；规则保持原顺序。"""
-    order = {r: i for i, r in enumerate(recipe_order)}
+def normalize(spec: BindingSpec) -> dict:
+    """规范化：recipe 按名称排序，腔室按 (机台, 腔室) 排序去重。"""
     return {
-        "tool": spec.tool,
-        "chamber": spec.chamber,
-        "rules": [
+        "feature_id": spec.feature_id,
+        "operator": spec.operator,
+        "version": spec.version,
+        "fleet": spec.fleet.model_dump(mode="json") if spec.fleet else None,
+        "recipes": [
             {
-                "recipes": sorted(set(r.recipes), key=lambda x: order.get(x, len(order))),
-                "features": dict(sorted(r.features.items())),
+                "recipe": r.recipe,
+                "chambers": [{"tool": t, "chamber": c} for t, c in sorted({(x.tool, x.chamber) for x in r.chambers})],
             }
-            for r in spec.rules
+            for r in sorted(spec.recipes, key=lambda r: r.recipe)
         ],
     }
 
@@ -63,175 +69,184 @@ async def _gde(fn, *args):
     """在线程里调用 GDE；失败转成 502。"""
     try:
         return await asyncio.to_thread(fn, *args)
+    except GdeNotFound:
+        raise
     except GdeError as e:
         raise gde_unavailable(str(e)) from None
 
 
-async def _revision(s, chamber: str, status: str) -> ChamberBinding | None:
-    stmt = select(ChamberBinding).where(ChamberBinding.chamber == chamber, ChamberBinding.status == status)
+async def _revision(s, feature_id: str, operator: str, status: str) -> OperatorBinding | None:
+    stmt = select(OperatorBinding).where(
+        OperatorBinding.feature_id == feature_id, OperatorBinding.operator == operator, OperatorBinding.status == status
+    )
     return (await s.execute(stmt.with_for_update())).scalar_one_or_none()
 
 
-async def active(s, chamber: str) -> ChamberBinding | None:
-    """腔室的生效修订（加行锁），没有则返回 None。"""
-    return await _revision(s, chamber, "active")
+async def active(s, feature_id: str, operator: str) -> OperatorBinding | None:
+    """算子的生效修订（加行锁），没有则返回 None。"""
+    return await _revision(s, feature_id, operator, "active")
 
 
-async def pending(s, chamber: str) -> ChamberBinding | None:
-    """腔室的待审核修订（加行锁），没有则返回 None。"""
-    return await _revision(s, chamber, "pending")
+async def pending(s, feature_id: str, operator: str) -> OperatorBinding | None:
+    """算子的待审核修订（加行锁），没有则返回 None。"""
+    return await _revision(s, feature_id, operator, "pending")
+
+
+def _lock_key(feature_id: str, operator: str) -> str:
+    return f"binding:{feature_id}/{operator}"
 
 
 # ---------------------------------------------------------------- 校验
 async def validate(s, spec: BindingSpec) -> tuple[dict, list[dict]]:
     """绑定校验（提交、导入共用）：返回 (规范化后的 spec, 全部错误)。"""
-    gde, errors = get_gde(), []
-    tool = await _gde(gde.chamber_tool, spec.chamber)
-    if tool is None:
-        return {}, [{"path": "chamber", "message": f"腔室 {spec.chamber} 不存在"}]
-    if tool != spec.tool:
-        errors.append({"path": "tool", "message": f"腔室 {spec.chamber} 属于机台 {tool}，不是 {spec.tool}"})
-    known = await _gde(gde.chamber_recipes, spec.chamber)
-    errors += _check_rules(spec, known)
-    errors += await _check_features(s, spec)
-    return _normalize(spec, known), errors
+    errors = await _check_operator(s, spec)
+    errors += _check_structure(spec)
+    errors += await _check_chambers(spec)
+    return normalize(spec), errors
 
 
-def _check_rules(spec: BindingSpec, known: list[str]) -> list[dict]:
-    """规则结构：至少一条规则，每条规则有配方和特征，配方属于该腔室且不跨规则重复。"""
-    errors = []
-    if not spec.rules:
-        errors.append({"path": "rules", "message": "至少需要一条规则"})
-    seen: dict[str, int] = {}
-    for i, rule in enumerate(spec.rules):
-        if not rule.recipes:
-            errors.append({"path": f"rules[{i}].recipes", "message": "至少选择一个配方"})
-        if not rule.features:
-            errors.append({"path": f"rules[{i}].features", "message": "至少选择一个特征"})
-        for j, recipe in enumerate(rule.recipes):
-            path = f"rules[{i}].recipes[{j}]"
-            if recipe not in known:
-                errors.append({"path": path, "message": f"配方 {recipe} 不在腔室 {spec.chamber}"})
-            elif seen.setdefault(recipe, i) != i:
-                errors.append({"path": path, "message": f"配方 {recipe} 已在规则 {seen[recipe] + 1} 中"})
-    return errors
-
-
-async def _check_features(s, spec: BindingSpec) -> list[dict]:
-    """引用的特征必须存在且已发布。"""
-    wanted = {
-        (fid, ver)
-        for rule in spec.rules
-        for fid, ver in rule.features.items()
-    }
-    if not wanted:
+async def _check_operator(s, spec: BindingSpec) -> list[dict]:
+    """绑定的算子版本必须存在且已发布。"""
+    status = await s.scalar(select(Operator.status).where(
+        Operator.feature_id == spec.feature_id, Operator.name == spec.operator, Operator.version == spec.version))
+    if status == "published":
         return []
-    stmt = select(Feature.feature_id, Feature.version).where(
-        tuple_(Feature.feature_id, Feature.version).in_(wanted), Feature.status == "published"
-    )
-    published = set((await s.execute(stmt)).tuples().all())
+    ref = f"{spec.feature_id}/{spec.operator}@{spec.version}"
+    return [{"path": "version", "message": f"算子 {ref} 不存在或未发布"}]
+
+
+def _check_structure(spec: BindingSpec) -> list[dict]:
+    """至少一个 recipe，recipe 不重复，每个 recipe 至少一个腔室；fleet 的时间范围合法。"""
     errors = []
-    for i, rule in enumerate(spec.rules):
-        for fid, ver in rule.features.items():
-            if (fid, ver) not in published:
-                errors.append({"path": f"rules[{i}].features.{fid}", "message": f"{fid}@{ver} 不存在或未发布"})
+    if spec.fleet and spec.fleet.start > spec.fleet.end:
+        errors.append({"path": "fleet.start", "message": "开始日期不能晚于结束日期"})
+    if not spec.recipes:
+        errors.append({"path": "recipes", "message": "至少选择一个 recipe"})
+    seen: dict[str, int] = {}
+    for i, r in enumerate(spec.recipes):
+        if seen.setdefault(r.recipe, i) != i:
+            errors.append({"path": f"recipes[{i}].recipe", "message": f"recipe {r.recipe} 重复"})
+        if not r.chambers:
+            errors.append({"path": f"recipes[{i}].chambers", "message": "至少勾选一个腔室"})
     return errors
 
 
-async def _check_state(s, chamber: str, spec: dict) -> None:
+async def _check_chambers(spec: BindingSpec) -> list[dict]:
+    """经 GDE 反查：recipe 存在，勾选的每个 (机台, 腔室) 都跑过该 recipe。"""
+    gde, errors = get_gde(), []
+    for i, r in enumerate(spec.recipes):
+        try:
+            known = set(await _gde(gde.recipe_chambers, r.recipe))
+        except GdeNotFound:
+            errors.append({"path": f"recipes[{i}].recipe", "message": f"recipe {r.recipe} 不存在"})
+            continue
+        for j, c in enumerate(r.chambers):
+            if (c.tool, c.chamber) not in known:
+                errors.append({
+                    "path": f"recipes[{i}].chambers[{j}]",
+                    "message": f"腔室 {c.chamber}（机台 {c.tool}）没有 recipe {r.recipe}",
+                })
+    return errors
+
+
+async def _check_state(s, feature_id: str, operator: str, spec: dict) -> None:
     """已有待审核 → PENDING_EXISTS；与生效修订一致 → NO_CHANGE。"""
-    p = await pending(s, chamber)
+    p = await pending(s, feature_id, operator)
     if p:
-        raise conflict("PENDING_EXISTS", f"腔室 {chamber} 已有待审核修订 {p.revision}")
-    a = await active(s, chamber)
+        raise conflict("PENDING_EXISTS", f"算子 {feature_id}/{operator} 已有待审核修订 {p.revision}")
+    a = await active(s, feature_id, operator)
     if a and a.spec == spec:
         raise conflict("NO_CHANGE", f"与生效修订 {a.revision} 相同")
 
 
-async def _insert(
-    s, spec: dict, *, status: str, source: str, user: str, base_revision: int | None, **extra
-) -> ChamberBinding:
-    """新增修订（修订号 = 最大值 + 1），并在同一事务里展开写 binding_item。调用方须已持有腔室锁。"""
-    chamber = spec["chamber"]
-    last = await s.scalar(select(func.max(ChamberBinding.revision)).where(ChamberBinding.chamber == chamber))
-    row = ChamberBinding(
-        chamber=chamber, revision=(last or 0) + 1, tool=spec["tool"], spec=spec, status=status,
+async def _insert(s, spec: dict, *, status: str, source: str, user: str, base_revision: int | None,
+                  **extra) -> OperatorBinding:
+    """新增修订（修订号 = 最大值 + 1），并在同一事务里展开写 binding_item。调用方须已持有算子绑定锁。"""
+    fid, op = spec["feature_id"], spec["operator"]
+    last = await s.scalar(select(func.max(OperatorBinding.revision)).where(
+        OperatorBinding.feature_id == fid, OperatorBinding.operator == op))
+    row = OperatorBinding(
+        feature_id=fid, operator=op, revision=(last or 0) + 1, version=spec["version"], spec=spec, status=status,
         source=source, base_revision=base_revision, created_by=user, **extra,
     )
     s.add(row)
     await s.flush()
-    for i, rule in enumerate(spec["rules"], start=1):
-        s.add_all(
-            BindingItem(chamber=chamber, revision=row.revision, rule_no=i, recipe=recipe, feature_id=fid, version=ver)
-            for recipe in rule["recipes"]
-            for fid, ver in rule["features"].items()
-        )
+    s.add_all(
+        BindingItem(feature_id=fid, operator=op, revision=row.revision, recipe=r["recipe"], chamber=c["chamber"],
+                    tool=c["tool"], version=spec["version"])
+        for r in spec["recipes"]
+        for c in r["chambers"]
+    )
     await s.flush()
     return row
 
 
 # ---------------------------------------------------------------- 提交、审核、撤回
-async def submit(chamber: str, body: BindingSpec, base_revision: int | None, user: str, source: str) -> ChamberBinding:
-    """校验并生成待审核修订。同一腔室同时只能有一个待审核修订。"""
-    if body.chamber != chamber:
-        raise invalid("BINDING_INVALID", "绑定校验失败", [{"path": "chamber", "message": "与路径中的腔室不一致"}])
+async def submit(feature_id: str, operator: str, body: BindingSpec, base_revision: int | None, user: str,
+                 source: str) -> OperatorBinding:
+    """校验并生成待审核修订。同一算子同时只能有一个待审核修订。"""
+    if (body.feature_id, body.operator) != (feature_id, operator):
+        raise invalid("BINDING_INVALID", "绑定校验失败",
+                      [{"path": "operator", "message": "与路径中的 feature_id / operator 不一致"}])
     async with db.session() as s:
-        await db.lock(s, f"binding:{chamber}")
+        await db.lock(s, _lock_key(feature_id, operator))
         spec, errors = await validate(s, body)
         if errors:
             raise invalid("BINDING_INVALID", "绑定校验失败", errors)
-        await _check_state(s, chamber, spec)
+        await _check_state(s, feature_id, operator, spec)
         return await _insert(s, spec, status="pending", source=source, user=user, base_revision=base_revision)
 
 
-async def _get_revision(s, chamber: str, revision: int) -> ChamberBinding:
-    stmt = select(ChamberBinding).where(ChamberBinding.chamber == chamber, ChamberBinding.revision == revision)
+async def _get_revision(s, feature_id: str, operator: str, revision: int) -> OperatorBinding:
+    stmt = select(OperatorBinding).where(
+        OperatorBinding.feature_id == feature_id, OperatorBinding.operator == operator,
+        OperatorBinding.revision == revision,
+    )
     row = (await s.execute(stmt.with_for_update())).scalar_one_or_none()
     if row is None:
-        raise not_found(f"腔室 {chamber} 的修订 {revision}")
+        raise not_found(f"算子 {feature_id}/{operator} 的修订 {revision}")
     return row
 
 
-async def review(chamber: str, revision: int, decision: str, comment: str | None, user: str) -> ChamberBinding:
-    """审核。通过时先调 SDK 注册 / 更新订阅，成功后再改库；SDK 失败则什么都不改。"""
+async def review(feature_id: str, operator: str, revision: int, decision: str, comment: str | None,
+                 user: str) -> OperatorBinding:
+    """审核。通过时原生效修订 -> superseded，重算涉及腔室的订阅范围；提交后同步 GDE（失败由后台任务重试）。"""
     comment = (comment or "").strip() or None
-    gde, new_sub = get_gde(), None
-    try:
-        async with db.session() as s:
-            await db.lock(s, f"binding:{chamber}")
-            p = await _get_revision(s, chamber, revision)
-            if p.status != "pending":
-                raise invalid_state("只有待审核的修订可以审核", p.status)
-            if p.created_by == user:
-                raise forbidden("审核人不能是提交人")
-            if decision == "reject" and not comment:
-                raise invalid("VALIDATION_ERROR", "退回时必须填写审核意见")
-            p.reviewed_by, p.reviewed_at, p.review_note = user, now(), comment
-            if decision == "reject":
-                p.status = "rejected"
-                return p
-
-            a = await active(s, chamber)
-            sub_id = a.gde_sub_id if a else None
-            if not sub_id:
-                sub_id = new_sub = await _gde(gde.subscribe, p.tool, chamber, recipes_of(p.spec))
-            elif recipes_of(p.spec) != recipes_of(a.spec):
-                await _gde(gde.update_subscription, sub_id, recipes_of(p.spec))
-            if a:
-                a.status, a.superseded_at = "superseded", now()
-                await s.flush()  # 先让旧修订退出 active，避免违反“每腔室一个 active”的唯一索引
-            p.status, p.gde_sub_id = "active", sub_id
+    changed: set[str] = set()
+    async with db.session() as s:
+        await db.lock(s, _lock_key(feature_id, operator))
+        p = await _get_revision(s, feature_id, operator, revision)
+        if p.status != "pending":
+            raise invalid_state("只有待审核的修订可以审核", p.status)
+        if p.created_by == user:
+            raise forbidden("审核人不能是提交人")
+        if decision == "reject" and not comment:
+            raise invalid("VALIDATION_ERROR", "退回时必须填写审核意见")
+        p.reviewed_by, p.reviewed_at, p.review_note = user, now(), comment
+        if decision == "reject":
+            p.status = "rejected"
             return p
-    except Exception:
-        if new_sub:  # 改库失败，撤销刚注册的订阅
-            await asyncio.to_thread(gde.cancel_subscription, new_sub)
-        raise
+        op_status = await s.scalar(select(Operator.status).where(
+            Operator.feature_id == feature_id, Operator.name == operator, Operator.version == p.version))
+        if op_status != "published":
+            raise invalid_state(f"算子 {feature_id}/{operator}@{p.version} 已不是发布状态", op_status or "none")
+        a = await active(s, feature_id, operator)
+        if a:
+            a.status, a.superseded_at = "superseded", now()
+            await s.flush()  # 先让旧修订退出 active，避免违反“每个算子一个 active”的唯一索引
+            changed |= chambers_of(a.spec)
+        p.status = "active"
+        changed |= chambers_of(p.spec)
+        await s.flush()
+        await subscription.refresh(s, changed)
+    await subscription.sync(changed)
+    return p
 
 
-async def withdraw(chamber: str, revision: int, user: str) -> ChamberBinding:
+async def withdraw(feature_id: str, operator: str, revision: int, user: str) -> OperatorBinding:
     """提交人撤回自己的待审核修订。"""
     async with db.session() as s:
-        p = await _get_revision(s, chamber, revision)
+        p = await _get_revision(s, feature_id, operator, revision)
         if p.status != "pending":
             raise invalid_state("只有待审核的修订可以撤回", p.status)
         if p.created_by != user:
@@ -241,72 +256,71 @@ async def withdraw(chamber: str, revision: int, user: str) -> ChamberBinding:
 
 
 # ---------------------------------------------------------------- 查询与导出
-async def list_bindings(tool=None, chamber=None, recipe=None, feature=None, status=None) -> list[dict]:
-    """每个腔室一项：{tool, chamber, active, pending}。recipe / feature 按生效修订的 binding_item 过滤。
-
-    未绑定的腔室后端不知道，由前端用 GDE 元数据补齐。
-    """
-    cond = [ChamberBinding.status.in_(["active", "pending"])]
-    if tool:
-        cond.append(ChamberBinding.tool == tool)
-    if chamber:
-        cond.append(ChamberBinding.chamber == chamber)
+async def list_bindings(feature_id=None, operator=None, tool=None, chamber=None, recipe=None,
+                        status=None) -> list[dict]:
+    """每个算子一项：{feature_id, operator, active, pending}。tool / chamber / recipe 按生效修订的 binding_item 过滤。"""
+    cond = [OperatorBinding.status.in_(["active", "pending"])]
+    if feature_id:
+        cond.append(OperatorBinding.feature_id == feature_id)
+    if operator:
+        cond.append(OperatorBinding.operator == operator)
     async with db.session() as s:
-        stmt = select(ChamberBinding).where(*cond).order_by(ChamberBinding.tool, ChamberBinding.chamber)
+        stmt = select(OperatorBinding).where(*cond).order_by(OperatorBinding.feature_id, OperatorBinding.operator)
         rows = (await s.execute(stmt)).scalars().all()
-        matched = await _matched_chambers(s, recipe, feature) if recipe or feature else None
+        matched = await _matched_operators(s, tool, chamber, recipe) if tool or chamber or recipe else None
 
-    out: dict[str, dict] = {}
+    out: dict[tuple[str, str], dict] = {}
     for r in rows:
-        item = out.setdefault(r.chamber, {"tool": r.tool, "chamber": r.chamber, "active": None, "pending": None})
+        key = (r.feature_id, r.operator)
+        item = out.setdefault(key, {"feature_id": r.feature_id, "operator": r.operator, "active": None, "pending": None})
         item[r.status] = r
     return [
-        x for x in out.values()
-        if (status is None or x[status] is not None) and (matched is None or x["chamber"] in matched)
+        x for k, x in out.items()
+        if (status is None or x[status] is not None) and (matched is None or k in matched)
     ]
 
 
-async def _matched_chambers(s, recipe: str | None, feature: str | None) -> set[str]:
-    """生效修订的 binding_item 中含指定配方 / 特征（id 或 id@version）的腔室。"""
-    q = select(BindingItem.chamber).join(
-        ChamberBinding,
-        (ChamberBinding.chamber == BindingItem.chamber) & (ChamberBinding.revision == BindingItem.revision),
-    ).where(ChamberBinding.status == "active")
-    if recipe:
-        q = q.where(BindingItem.recipe == recipe)
-    if feature:
-        fid, _, ver = feature.partition("@")
-        q = q.where(BindingItem.feature_id == fid, *([BindingItem.version == ver] if ver else []))
-    return set((await s.execute(q)).scalars().all())
+async def _matched_operators(s, tool: str | None, chamber: str | None, recipe: str | None) -> set[tuple[str, str]]:
+    """生效修订的 binding_item 中含指定机台 / 腔室 / recipe 的算子。"""
+    q = select(BindingItem.feature_id, BindingItem.operator).join(
+        OperatorBinding,
+        (OperatorBinding.feature_id == BindingItem.feature_id) & (OperatorBinding.operator == BindingItem.operator)
+        & (OperatorBinding.revision == BindingItem.revision),
+    ).where(OperatorBinding.status == "active")
+    for col, val in ((BindingItem.tool, tool), (BindingItem.chamber, chamber), (BindingItem.recipe, recipe)):
+        if val:
+            q = q.where(col == val)
+    return set((await s.execute(q)).tuples().all())
 
 
-async def get_revisions(chamber: str, revision: int | None = None):
-    """不带 revision 返回腔室全部修订（新的在前）；带 revision 返回单个修订。"""
+async def get_revisions(feature_id: str, operator: str, revision: int | None = None):
+    """不带 revision 返回算子全部修订（新的在前）；带 revision 返回单个修订。"""
     async with db.session() as s:
         if revision is not None:
-            return await _get_revision(s, chamber, revision)
-        stmt = select(ChamberBinding).where(ChamberBinding.chamber == chamber).order_by(ChamberBinding.revision.desc())
+            return await _get_revision(s, feature_id, operator, revision)
+        stmt = select(OperatorBinding).where(
+            OperatorBinding.feature_id == feature_id, OperatorBinding.operator == operator,
+        ).order_by(OperatorBinding.revision.desc())
         return (await s.execute(stmt)).scalars().all()
 
 
 async def export(**filters) -> dict:
-    """导出生效修订，格式可以直接再导入。"""
+    """导出生效修订（不含空修订），格式可以直接再导入。"""
     items = await list_bindings(**filters)
-    actives = [x["active"] for x in items]
     return {
         "format": EXPORT_FORMAT,
         "exported_at": now().isoformat(),
         "bindings": [
-            {"tool": a.tool, "chamber": a.chamber, "revision": a.revision, "rules": a.spec["rules"]}
-            for a in actives
-            if a and a.spec["rules"]
+            {**a.spec, "revision": a.revision}
+            for a in (x["active"] for x in items)
+            if a and a.spec["recipes"]
         ],
     }
 
 
 # ---------------------------------------------------------------- 导入
 async def import_bindings(bindings: list[dict], dry_run: bool, user: str) -> list[dict]:
-    """逐个腔室校验：new / skip / conflict / error。dry_run=False 时为所有 new 生成待审核修订（同一事务）。"""
+    """逐个算子校验：new / skip / conflict / error。dry_run=False 时为所有 new 生成待审核修订（同一事务）。"""
     results, seen = [], set()
     async with db.session() as s:
         for raw in bindings:
@@ -315,84 +329,71 @@ async def import_bindings(bindings: list[dict], dry_run: bool, user: str) -> lis
 
 
 async def _import_one(s, raw: dict, seen: set, dry_run: bool, user: str) -> dict:
-    """在调用方的事务里处理导入文件中的一个腔室，返回该腔室的结果项；seen 记录已出现的腔室。"""
-    chamber = raw.get("chamber")
-    res = {"tool": raw.get("tool"), "chamber": chamber, "action": "error", "message": ""}
+    """在调用方的事务里处理导入文件中的一个算子，返回该算子的结果项；seen 记录已出现的算子。"""
+    fid, op = raw.get("feature_id"), raw.get("operator")
+    res = {"feature_id": fid, "operator": op, "action": "error", "message": ""}
     try:
         spec = BindingSpec.model_validate(raw)
     except ValidationError as e:
         res["message"], res["errors"] = "格式错误", error_list(e)
         return res
-    if chamber in seen:
+    if (fid, op) in seen:
         res["message"] = "文件中重复出现"
         return res
-    seen.add(chamber)
+    seen.add((fid, op))
 
-    await db.lock(s, f"binding:{chamber}")
+    await db.lock(s, _lock_key(fid, op))
     normalized, errors = await validate(s, spec)
     if errors:
         res["message"], res["errors"] = "校验失败", errors
         return res
     try:
-        await _check_state(s, chamber, normalized)
+        await _check_state(s, fid, op, normalized)
     except AppError as e:
         res["action"] = "conflict" if e.code == "PENDING_EXISTS" else "skip"
         res["message"] = e.message
         return res
 
-    a = await active(s, chamber)
+    a = await active(s, fid, op)
     res["action"], res["message"] = "new", "生成待审核修订"
     if raw.get("revision") and a and raw["revision"] != a.revision:
         res["message"] += f"（文件基于修订 {raw['revision']}，当前生效修订 {a.revision}）"
     if not dry_run:
         row = await _insert(
-            s, normalized, status="pending", source="import", user=user,
-            base_revision=a.revision if a else None,
+            s, normalized, status="pending", source="import", user=user, base_revision=a.revision if a else None,
         )
         res["revision"] = row.revision
     return res
 
 
-# ---------------------------------------------------------------- 特征下线
-async def remove_feature(s, feature_id: str, version: str) -> list[dict]:
-    """在调用方的事务里：从所有生效修订中移除该特征（生成 system 修订直接生效），撤回含该特征的待审核修订。
+# ---------------------------------------------------------------- 算子下线
+async def remove_operator(s, feature_id: str, operator: str, version: int) -> dict | None:
+    """在调用方的事务里：撤回引用该算子版本的待审核修订；生效修订是该版本时，插入一个空的 system 修订直接生效。
 
-    订阅变更写入 gde_outbox，提交后再执行。
+    返回 {feature_id, operator, version, new_revision, chambers}；什么都没动返回 None。
+    涉及腔室的订阅范围在本事务里重算，调用方提交后再调 subscription.sync。
     """
-    joined = select(ChamberBinding).join(
-        BindingItem, (BindingItem.chamber == ChamberBinding.chamber) & (BindingItem.revision == ChamberBinding.revision)
-    ).where(BindingItem.feature_id == feature_id, BindingItem.version == version).distinct()
+    await db.lock(s, _lock_key(feature_id, operator))
+    ref = f"{feature_id}/{operator}@{version}"
+    p = await pending(s, feature_id, operator)
+    withdrew = p is not None and p.version == version
+    if withdrew:
+        p.status, p.review_note = "withdrawn", f"算子 {ref} 下线，自动撤回"
 
-    # 待审核修订含该特征：撤回
-    for p in (await s.execute(joined.where(ChamberBinding.status == "pending"))).scalars():
-        p.status, p.review_note = "withdrawn", f"特征 {feature_id}@{version} 下线，自动撤回"
-
-    affected = []
-    for a in (await s.execute(joined.where(ChamberBinding.status == "active"))).scalars().all():
-        await db.lock(s, f"binding:{a.chamber}")
-        spec = copy.deepcopy(a.spec)
-        for rule in spec["rules"]:
-            if rule["features"].get(feature_id) == version:
-                del rule["features"][feature_id]
-        spec["rules"] = [r for r in spec["rules"] if r["features"]]
-
-        p = await pending(s, a.chamber)
-        if p:  # 该腔室的其他待审核修订基于旧内容，也一并撤回
-            p.status, p.review_note = "withdrawn", f"特征 {feature_id}@{version} 下线，自动撤回，请基于新修订重新提交"
-        a.status, a.superseded_at = "superseded", now()
-        await s.flush()
-
-        keep = bool(spec["rules"]) and a.gde_sub_id is not None
-        new = await _insert(
-            s, spec, status="active", source="system", user=SYSTEM, base_revision=a.revision,
-            reviewed_by=SYSTEM, reviewed_at=now(), review_note=f"特征 {feature_id}@{version} 下线",
-            gde_sub_id=a.gde_sub_id if keep else None,
-        )
-        if a.gde_sub_id and not keep:
-            s.add(GdeOutbox(action="cancel_subscription", payload={"sub_id": a.gde_sub_id}))
-        elif keep and recipes_of(spec) != recipes_of(a.spec):
-            payload = {"sub_id": a.gde_sub_id, "recipes": recipes_of(spec)}
-            s.add(GdeOutbox(action="update_subscription", payload=payload))
-        subscription = "kept" if keep else "cancelled"
-        affected.append({"chamber": a.chamber, "new_revision": new.revision, "subscription": subscription})
-    return affected
+    a = await active(s, feature_id, operator)
+    if a is None or a.version != version:
+        return {"feature_id": feature_id, "operator": operator, "version": version, "new_revision": None,
+                "chambers": []} if withdrew else None
+    if p is not None and not withdrew:  # 待审核修订基于旧的生效修订，也一并撤回
+        p.status, p.review_note = "withdrawn", f"算子 {ref} 下线，自动撤回，请基于新修订重新提交"
+    a.status, a.superseded_at = "superseded", now()
+    await s.flush()
+    spec = {**a.spec, "recipes": []}
+    new = await _insert(
+        s, spec, status="active", source="system", user=SYSTEM, base_revision=a.revision,
+        reviewed_by=SYSTEM, reviewed_at=now(), review_note=f"算子 {ref} 下线",
+    )
+    chambers = chambers_of(a.spec)
+    await subscription.refresh(s, chambers)
+    return {"feature_id": feature_id, "operator": operator, "version": version, "new_revision": new.revision,
+            "chambers": sorted(chambers)}

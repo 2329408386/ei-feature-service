@@ -10,7 +10,6 @@ from src.engine import sandbox as sb
 from src.engine.sandbox import DETAIL_MAX, RunResult
 from src.util.config import settings
 from src.util.gde import GdeUnavailable
-from src.util.storage import CODE_FILE
 
 GDE_JSON = settings.gde.model_dump_json()
 
@@ -164,8 +163,8 @@ def execute(tmp_path):
         n["i"] += 1
         d = tmp_path / f"pkg{n['i']}"
         d.mkdir()
-        (d / CODE_FILE).write_text(CODE.format(fetch="    " + fetch, compute="    " + compute))
-        return sb._execute(str(d), f"eif_test_inproc_{id(tmp_path)}_{n['i']}", run_id, GDE_JSON, timeouts)
+        (d / "calc.py").write_text(CODE.format(fetch="    " + fetch, compute="    " + compute))
+        return sb._execute(str(d / "calc.py"), f"eif_test_inproc_{id(tmp_path)}_{n['i']}", run_id, GDE_JSON, timeouts)
 
     return run
 
@@ -204,8 +203,8 @@ def test_execute_uses_separate_timeouts(execute):
 def test_execute_reuses_loaded_module(tmp_path):
     d = tmp_path / "pkg"
     d.mkdir()
-    (d / CODE_FILE).write_text(CODE.format(fetch="    return {}", compute="    return 1"))
+    (d / "calc.py").write_text(CODE.format(fetch="    return {}", compute="    return 1"))
     key = f"eif_test_reuse_{id(tmp_path)}"
-    assert sb._execute(str(d), key, "RUN-0338", GDE_JSON, (2, 2))["value"] == 1.0
-    (d / CODE_FILE).write_text(CODE.format(fetch="    return {}", compute="    return 2"))
-    assert sb._execute(str(d), key, "RUN-0338", GDE_JSON, (2, 2))["value"] == 1.0  # 同 key 不重新加载
+    assert sb._execute(str(d / "calc.py"), key, "RUN-0338", GDE_JSON, (2, 2))["value"] == 1.0
+    (d / "calc.py").write_text(CODE.format(fetch="    return {}", compute="    return 2"))
+    assert sb._execute(str(d / "calc.py"), key, "RUN-0338", GDE_JSON, (2, 2))["value"] == 1.0  # 同 key 不重新加载

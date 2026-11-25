@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
-"""实时计算：监听 Redis Stream gde:run:done，每条通知按绑定计算该执行的全部特征。
+"""实时计算：监听 Redis Stream gde:run:done，每条通知按生效绑定计算该执行的全部算子。
 
-一条消息的所有特征写完才 XACK；GDE 不可用时不 ACK，等认领后重试；
-投递次数超过 MAX_DELIVERIES 时，把还没结果的特征记为 FETCH_ERROR 后 ACK。
+一条消息的所有算子写完才 XACK；GDE 不可用时不 ACK，等认领后重试；
+投递次数超过 MAX_DELIVERIES 时，把还没结果的算子记为 FETCH_ERROR 后 ACK。
 """
 
 import asyncio
@@ -13,16 +13,7 @@ import time
 from datetime import datetime
 
 from src.engine.sandbox import RunResult, get_sandbox
-from src.engine.writer import (
-    FeatureRef,
-    RunRef,
-    active_revision,
-    add_run,
-    features_for,
-    has_value,
-    live_batch,
-    write_value,
-)
+from src.engine.writer import OperatorRef, RunRef, add_run, has_value, live_batch, operators_for, write_value
 from src.util import db
 from src.util.config import MAX_DELIVERIES
 from src.util.gde import GdeUnavailable
@@ -47,13 +38,13 @@ class LiveConsumer:
         self.stream = stream or RunDoneStream(get_redis())
 
     @staticmethod
-    async def _compute(f: FeatureRef, run: RunRef, give_up: bool) -> RunResult | None:
-        """在沙箱中计算一个特征；超过最大投递次数直接记空值；GDE 不可用返回 None（稍后重试）。"""
+    async def _compute(op: OperatorRef, run: RunRef, give_up: bool) -> RunResult | None:
+        """在沙箱中计算一个算子；超过最大投递次数直接记空值；GDE 不可用返回 None（稍后重试）。"""
         if give_up:
             return RunResult(reason="FETCH_ERROR", reason_detail="超过最大投递次数")
         try:
             async with limits.slot(run.chamber):
-                r = await get_sandbox().run(f.feature_id, f.version, f.package_hash, run.run_id)
+                r = await get_sandbox().run(op, run.run_id)
         except GdeUnavailable as e:
             limits.breaker.failure()
             log.warning("GDE 不可用，%s 稍后重试：%s", run.run_id, e)
@@ -87,24 +78,23 @@ class LiveConsumer:
             log.exception("处理通知 %s 失败，等待重试", msg_id)
 
     async def process(self, run: RunRef, give_up: bool = False) -> bool:
-        """计算这次执行要算的特征。返回 True 表示处理完毕可以 ACK。"""
+        """计算这次执行要算的算子。返回 True 表示处理完毕可以 ACK。"""
         async with db.session() as s:
-            revision = await active_revision(s, run.chamber)
-            feats = await features_for(s, run.chamber, revision, run.recipe) if revision else []
-            if not feats:  # 腔室没有生效绑定，或配方不在绑定内
+            ops = await operators_for(s, run.chamber, run.recipe)
+            if not ops:  # 该腔室的该 recipe 不在任何生效绑定内
                 return True
-            batch_id = await live_batch(s, run.chamber, revision, run.end_at)
+            batch_id = await live_batch(s, run.chamber, run.end_at)
 
         wrote = False
-        for f in feats:
+        for op in ops:
             async with db.session() as s:
-                if await has_value(s, f, run.run_id):  # 重复通知：已算过就跳过
+                if await has_value(s, op, run.run_id):  # 重复通知：已算过就跳过
                     continue
-            r = await self._compute(f, run, give_up)
+            r = await self._compute(op, run, give_up)
             if r is None:
                 return False
             async with db.session() as s:
-                wrote |= await write_value(s, batch_id, f, run, r)
+                wrote |= await write_value(s, batch_id, op, run, r)
         if wrote:
             async with db.session() as s:
                 await add_run(s, batch_id)
