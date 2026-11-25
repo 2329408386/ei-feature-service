@@ -21,13 +21,14 @@ async def query(feature: str, *, tool=None, chamber=None, recipe=None, wafer=Non
     if not ver:
         raise invalid("VALIDATION_ERROR", "feature 必须形如 id@version")
     filters = {"tool": tool, "chamber": chamber, "recipe": recipe, "wafer": wafer, "lot": lot}
-    cond = _conditions(fid, ver, filters, start, end, only_null)
+    cond = _conditions(fid, ver, filters, (start, end), only_null)
     return await _page(fid, ver, cond, page, size)
 
 
-def _conditions(fid: str, ver: str, filters: dict, start: date | None, end: date | None, only_null: bool) -> list:
-    """组装特征值查询的 WHERE 条件；filters 中值为空的列不参与过滤。"""
+def _conditions(fid: str, ver: str, filters: dict, period: tuple[date | None, date | None], only_null: bool) -> list:
+    """组装特征值查询的 WHERE 条件；filters 中值为空的列不参与过滤，period 为 (start, end)，含两端日期。"""
     v = FeatureValue
+    start, end = period
     cond = [v.feature_id == fid, v.version == ver]
     cond.extend(getattr(v, col) == val for col, val in filters.items() if val)
     if start:

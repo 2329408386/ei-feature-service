@@ -22,7 +22,7 @@ def compiled(clauses) -> list[tuple[str, dict]]:
 
 # ---------------------------------------------------------------- value
 def test_conditions_minimal():
-    cond = compiled(value._conditions("f", "1.0.0", {"tool": None, "chamber": ""}, None, None, False))
+    cond = compiled(value._conditions("f", "1.0.0", {"tool": None, "chamber": ""}, (None, None), False))
     assert len(cond) == 2
     assert "feature_value.feature_id" in cond[0][0] and list(cond[0][1].values()) == ["f"]
     assert "feature_value.version" in cond[1][0] and list(cond[1][1].values()) == ["1.0.0"]
@@ -31,7 +31,7 @@ def test_conditions_minimal():
 def test_conditions_all_filters():
     filters = {"tool": "T", "chamber": "C", "recipe": "R", "wafer": "W", "lot": "L"}
     start, end = date(2026, 11, 1), date(2026, 11, 3)
-    cond = compiled(value._conditions("f", "1.0.0", filters, start, end, True))
+    cond = compiled(value._conditions("f", "1.0.0", filters, (start, end), True))
     assert len(cond) == 2 + 5 + 3
     for (sql, params), (col, val) in zip(cond[2:7], filters.items(), strict=True):
         assert f"feature_value.{col} = " in sql and list(params.values()) == [val]
@@ -41,7 +41,7 @@ def test_conditions_all_filters():
 
 
 def test_conditions_only_some_filters():
-    cond = compiled(value._conditions("f", "1", {"tool": None, "wafer": "W01"}, None, date(2026, 1, 1), False))
+    cond = compiled(value._conditions("f", "1", {"tool": None, "wafer": "W01"}, (None, date(2026, 1, 1)), False))
     assert len(cond) == 4
     assert "feature_value.wafer" in cond[2][0] and "feature_value.run_end_at <" in cond[3][0]
 
