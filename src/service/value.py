@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """特征值查询。retired 由 feature.status 实时得出，不存进值表。"""
 
 from datetime import date
@@ -13,6 +16,7 @@ from src.util.timeutil import day_range
 async def query(feature: str, *, tool=None, chamber=None, recipe=None, wafer=None, lot=None,
                 start: date | None = None, end: date | None = None, only_null: bool = False,
                 page: int = 1, size: int = 100) -> tuple[list[dict], int]:
+    """按 id@version 查询特征值，按执行结束时间升序分页。返回 (items, total)。"""
     fid, _, ver = feature.partition("@")
     if not ver:
         raise invalid("VALIDATION_ERROR", "feature 必须形如 id@version")
@@ -30,7 +34,8 @@ async def query(feature: str, *, tool=None, chamber=None, recipe=None, wafer=Non
 
     async with db.session() as s:
         total = await s.scalar(select(func.count()).select_from(v).where(*cond))
-        retired = await s.scalar(select(Feature.status == "retired").where(Feature.feature_id == fid, Feature.version == ver))
+        is_retired = select(Feature.status == "retired").where(Feature.feature_id == fid, Feature.version == ver)
+        retired = await s.scalar(is_retired)
         rows = (await s.execute(
             select(v).where(*cond).order_by(v.run_end_at).offset((page - 1) * size).limit(size)
         )).scalars().all()

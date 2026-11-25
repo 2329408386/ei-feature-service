@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """当前用户：网关注入 X-User 请求头（工号）。"""
 
 from typing import Annotated

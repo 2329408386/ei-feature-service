@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """GDE 适配层：服务内部只依赖 GdeClient 协议。
 
 - SdkGdeClient：对接真实 GDE SDK（函数名待数据底座确认，目前是 TODO）。
@@ -55,24 +58,45 @@ SubStatus = Literal["running", "paused", "cancelled"]
 
 
 class GdeClient(Protocol):
-    # 元数据：只用于后端校验，前端直接调 GDE 元数据服务
-    def chamber_tool(self, chamber: str) -> str | None: ...
-    def chamber_recipes(self, chamber: str) -> list[str]: ...
+    """GDE 客户端协议。元数据方法只用于后端校验，前端直接调 GDE 元数据服务。"""
 
-    # 订阅
-    def subscribe(self, tool: str, chamber: str, recipes: list[str]) -> str: ...
-    def update_subscription(self, sub_id: str, recipes: list[str]) -> None: ...
-    def pause_subscription(self, sub_id: str) -> None: ...
-    def resume_subscription(self, sub_id: str) -> None: ...
-    def cancel_subscription(self, sub_id: str) -> None: ...
-    def subscription_status(self, sub_id: str) -> SubStatus: ...
+    # ---- 元数据
+    def chamber_tool(self, chamber: str) -> str | None:
+        """腔室所属机台；腔室不存在返回 None。"""
 
-    # 执行与数据
-    def list_runs(self, chamber: str, recipes: list[str], start: datetime, end: datetime) -> list[Run]: ...
-    def run_info(self, run_id: str) -> Run: ...
+    def chamber_recipes(self, chamber: str) -> list[str]:
+        """腔室可用的 recipe 列表；腔室不存在抛 GdeNotFound。"""
+
+    # ---- 订阅
+    def subscribe(self, tool: str, chamber: str, recipes: list[str]) -> str:
+        """创建订阅，返回订阅 ID。"""
+
+    def update_subscription(self, sub_id: str, recipes: list[str]) -> None:
+        """修改订阅的 recipe 范围。"""
+
+    def pause_subscription(self, sub_id: str) -> None:
+        """暂停订阅。"""
+
+    def resume_subscription(self, sub_id: str) -> None:
+        """恢复订阅。"""
+
+    def cancel_subscription(self, sub_id: str) -> None:
+        """取消订阅。"""
+
+    def subscription_status(self, sub_id: str) -> SubStatus:
+        """查询订阅状态。"""
+
+    # ---- 执行与数据
+    def list_runs(self, chamber: str, recipes: list[str], start: datetime, end: datetime) -> list[Run]:
+        """列出腔室在 [start, end) 内、属于 recipes 的执行。"""
+
+    def run_info(self, run_id: str) -> Run:
+        """查询单次执行的元数据；不存在抛 GdeNotFound。"""
+
     def trace(
         self, run_id: str, signal: str, unit: str | None, timeout_s: float
-    ) -> tuple[list[float], list[float]]: ...
+    ) -> tuple[list[float], list[float]]:
+        """取信号曲线 (t, v)，t 为相对执行开始的秒数且升序。"""
 
 
 # ====================================================================== 真实 SDK
@@ -105,6 +129,17 @@ def _seed(*parts: str) -> int:
     return zlib.crc32("|".join(parts).encode())  # 跨进程稳定（不用内置 hash）
 
 
+def _run_times(start: datetime, end: datetime):
+    """[start, end) 内每个整点的 :15 和 :45。"""
+    t = start.astimezone(ZONE).replace(minute=15, second=0, microsecond=0)
+    while t < end:
+        for minute in (15, 45):
+            at = t.replace(minute=minute)
+            if start <= at < end:
+                yield at
+        t += timedelta(hours=1)
+
+
 class FakeGdeClient:
     """确定性的假 GDE：
 
@@ -129,15 +164,18 @@ class FakeGdeClient:
 
     # ---- 元数据
     def chamber_tool(self, chamber):
+        """见 GdeClient.chamber_tool。"""
         return self.chambers[chamber][0] if chamber in self.chambers else None
 
     def chamber_recipes(self, chamber):
+        """见 GdeClient.chamber_recipes。"""
         if chamber not in self.chambers:
             raise GdeNotFound(f"腔室 {chamber} 不存在")
         return list(self.chambers[chamber][1])
 
     # ---- 订阅
     def subscribe(self, tool, chamber, recipes):
+        """见 GdeClient.subscribe。"""
         sub_id = f"gde-sub-{next(self._ids):04d}"
         self.subs[sub_id] = {"tool": tool, "chamber": chamber, "recipes": list(recipes), "status": "running"}
         return sub_id
@@ -148,18 +186,23 @@ class FakeGdeClient:
         return self.subs[sub_id]
 
     def update_subscription(self, sub_id, recipes):
+        """见 GdeClient.update_subscription。"""
         self._sub(sub_id)["recipes"] = list(recipes)
 
     def pause_subscription(self, sub_id):
+        """见 GdeClient.pause_subscription。"""
         self._sub(sub_id)["status"] = "paused"
 
     def resume_subscription(self, sub_id):
+        """见 GdeClient.resume_subscription。"""
         self._sub(sub_id)["status"] = "running"
 
     def cancel_subscription(self, sub_id):
+        """见 GdeClient.cancel_subscription。"""
         self._sub(sub_id)["status"] = "cancelled"
 
     def subscription_status(self, sub_id):
+        """见 GdeClient.subscription_status。"""
         return self._sub(sub_id)["status"]
 
     # ---- 执行与数据
@@ -173,21 +216,15 @@ class FakeGdeClient:
         )
 
     def list_runs(self, chamber, recipes, start, end):
+        """每个整点的 :15 和 :45 各生成一次执行，只保留 recipe 在 recipes 中的。"""
         self._maybe_fail()
         if chamber not in self.chambers:
             raise GdeNotFound(f"腔室 {chamber} 不存在")
-        runs, t = [], start.astimezone(ZONE).replace(minute=15, second=0, microsecond=0)
-        while t < end:  # 每个整点 :15 和 :45 各一次执行
-            for minute in (15, 45):
-                at = t.replace(minute=minute)
-                if start <= at < end:
-                    run = self._make_run(f"RUN-{chamber}-{at:%Y%m%d%H%M}", chamber, at)
-                    if run.recipe in recipes:
-                        runs.append(run)
-            t += timedelta(hours=1)
-        return runs
+        runs = (self._make_run(f"RUN-{chamber}-{at:%Y%m%d%H%M}", chamber, at) for at in _run_times(start, end))
+        return [run for run in runs if run.recipe in recipes]
 
     def run_info(self, run_id):
+        """见 GdeClient.run_info。"""
         self._maybe_fail()
         if run_id.startswith("RUN-MISSING"):
             raise GdeNotFound(f"执行 {run_id} 不存在")
@@ -200,6 +237,7 @@ class FakeGdeClient:
         return self._make_run(run_id, chamber, end_at)
 
     def trace(self, run_id, signal, unit, timeout_s):
+        """按 (run_id, signal) 生成确定性的线性 + 噪声曲线；稀疏执行的点数为 1/3。"""
         self.run_info(run_id)  # 不存在时抛 GdeNotFound
         if signal.startswith("MISSING"):
             raise GdeNotFound(f"信号 {signal} 不存在")
@@ -214,6 +252,7 @@ class FakeGdeClient:
 
 # ====================================================================== 获取客户端
 def make_gde(cfg: GdeConfig) -> GdeClient:
+    """按配置创建客户端：fake=true 用内存实现，否则用 SDK。"""
     return FakeGdeClient() if cfg.fake else SdkGdeClient(cfg.sdk)
 
 

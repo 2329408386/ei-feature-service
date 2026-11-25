@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """接口的请求 / 响应模型。字段名即 JSON 字段名。"""
 
 from datetime import date, datetime
@@ -47,10 +50,12 @@ class FeatureOut(Out):
 
     @computed_field
     def description(self) -> str:
+        """特征描述，取自 feature.json 的 desc。"""
         return self.spec.get("desc", "")
 
     @computed_field
     def unit(self) -> str | None:
+        """输出单位，取自 feature.json 的 output.unit。"""
         output = self.spec.get("output")
         return output.get("unit") if isinstance(output, dict) else None
 

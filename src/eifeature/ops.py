@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """常用的时间序列算子。参数接受 Series 或 {"t": [...], "v": [...]}。"""
 
 import numpy as np
@@ -56,6 +59,7 @@ def slope(s) -> Series:
 
 
 def mean(s) -> float:
+    """平均值。"""
     s = as_series(s)
     _skip_if_empty(s)
     return float(np.mean(s.v))

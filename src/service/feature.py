@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """特征：上传、查询、提交评审、评审、下线、删除草稿、试跑。
 
 状态流转：draft --submit(本人)--> review --approve(他人)--> published --retire--> retired
@@ -32,6 +35,7 @@ async def _get(s, feature_id: str, version: str, lock: bool = False) -> Feature:
 
 # ---------------------------------------------------------------- 上传与查询
 async def upload(spec_raw: bytes, code_raw: bytes, user: str) -> Feature:
+    """校验特征包，版本号必须大于已有版本；文件存入对象存储后生成草稿。"""
     spec, errors = check_package(spec_raw, code_raw)
     if errors:
         raise invalid("PACKAGE_INVALID", "特征包校验失败", errors)
@@ -61,6 +65,7 @@ async def upload(spec_raw: bytes, code_raw: bytes, user: str) -> Feature:
 
 
 async def list_features(status: str | None, q: str | None, feature_id: str | None, page: int, size: int):
+    """分页查询，q 匹配特征 ID 或描述；按特征 ID、版本号降序排列。返回 (rows, total)。"""
     cond = []
     if status:
         cond.append(Feature.status == status)
@@ -91,6 +96,7 @@ async def get_feature(feature_id: str, version: str) -> tuple[Feature, str]:
 
 # ---------------------------------------------------------------- 状态流转
 async def submit(feature_id: str, version: str, user: str) -> Feature:
+    """草稿 -> 待评审，只有上传人可以提交。"""
     async with db.session() as s:
         row = await _get(s, feature_id, version, lock=True)
         if row.status != "draft":
@@ -101,7 +107,10 @@ async def submit(feature_id: str, version: str, user: str) -> Feature:
     return row
 
 
-async def review(feature_id: str, version: str, decision: str, comment: str | None, trial_runs: list[str], user: str) -> Feature:
+async def review(
+    feature_id: str, version: str, decision: str, comment: str | None, trial_runs: list[str], user: str
+) -> Feature:
+    """评审（评审人不能是提交人）：通过需至少试跑过一个 run_id，退回需填写意见。"""
     comment = (comment or "").strip() or None
     async with db.session() as s:
         row = await _get(s, feature_id, version, lock=True)
@@ -117,7 +126,10 @@ async def review(feature_id: str, version: str, decision: str, comment: str | No
             if not comment:
                 raise invalid("VALIDATION_ERROR", "退回时必须填写评审意见")
             row.status = "draft"
-        entry = {"decision": decision, "reviewer": user, "comment": comment, "trial_runs": trial_runs, "at": now().isoformat()}
+        entry = {
+            "decision": decision, "reviewer": user, "comment": comment, "trial_runs": trial_runs,
+            "at": now().isoformat(),
+        }
         row.review_log = [*row.review_log, entry]  # 重新赋值，SQLAlchemy 才会检测到 JSONB 变化
     return row
 
@@ -137,6 +149,7 @@ async def retire(feature_id: str, version: str, reason: str, user: str) -> tuple
 
 
 async def delete_draft(feature_id: str, version: str, user: str) -> None:
+    """删除自己的草稿，连同对象存储中的文件。"""
     async with db.session() as s:
         row = await _get(s, feature_id, version, lock=True)
         if row.status != "draft":
@@ -162,6 +175,5 @@ async def trial(feature_id: str, version: str, run_id: str) -> dict:
         raise not_found(f"执行 {run_id}") from None
     except GdeUnavailable as e:
         raise gde_unavailable(str(e)) from None
-    run_out = {k: getattr(run, k) for k in ("run_id", "tool", "chamber", "recipe", "lot", "wafer")} | {"end_at": run.end_at}
+    run_out = {k: getattr(run, k) for k in ("run_id", "tool", "chamber", "recipe", "lot", "wafer", "end_at")}
     return {"run": run_out, **r.__dict__}
-

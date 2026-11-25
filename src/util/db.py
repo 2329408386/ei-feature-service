@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """数据库：异步引擎、会话、建表、按键加锁。"""
 
 from contextlib import asynccontextmanager
@@ -22,6 +25,7 @@ def configure(url: str | None = None) -> None:
 
 
 def engine() -> AsyncEngine:
+    """当前引擎；尚未创建时按配置创建。"""
     if _engine is None:
         configure()
     return _engine
@@ -49,5 +53,6 @@ async def lock(s: AsyncSession, key: str) -> None:
 
 
 async def dispose() -> None:
+    """关闭连接池。"""
     if _engine is not None:
         await _engine.dispose()

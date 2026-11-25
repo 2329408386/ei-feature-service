@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """时间工具：所有日期参数、实时批次整点都按 config.TZ 解释。"""
 
 from datetime import date, datetime, time, timedelta
@@ -9,10 +12,12 @@ ZONE = ZoneInfo(TZ)
 
 
 def now() -> datetime:
+    """当前时间（config.TZ 时区）。"""
     return datetime.now(ZONE)
 
 
 def today() -> date:
+    """今天（config.TZ 时区）。"""
     return now().date()
 
 

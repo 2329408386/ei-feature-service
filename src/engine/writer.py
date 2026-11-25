@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """写特征值、维护批次。实时和补算 / 重算共用。"""
 
 from dataclasses import dataclass
@@ -33,10 +36,12 @@ class FeatureRef:
 
     @property
     def ref(self) -> str:
+        """形如 id@version。"""
         return f"{self.feature_id}@{self.version}"
 
 
 async def active_revision(s, chamber: str) -> int | None:
+    """腔室生效修订号，没有生效绑定返回 None。"""
     stmt = select(ChamberBinding.revision).where(ChamberBinding.chamber == chamber, ChamberBinding.status == "active")
     return await s.scalar(stmt)
 
@@ -59,7 +64,9 @@ async def live_batch(s, chamber: str, revision: int, end_at: datetime) -> int:
         insert(FeatureBatch)
         .values(mode="live", status="running", chamber=chamber, binding_revision=revision, data_from=start,
                 data_to=start + timedelta(hours=1), created_by=SYSTEM, started_at=now())
-        .on_conflict_do_nothing(index_elements=["chamber", "binding_revision", "data_from"], index_where=FeatureBatch.mode == "live")
+        .on_conflict_do_nothing(
+            index_elements=["chamber", "binding_revision", "data_from"], index_where=FeatureBatch.mode == "live"
+        )
     )
     stmt = select(FeatureBatch.batch_id).where(
         FeatureBatch.mode == "live", FeatureBatch.chamber == chamber,
@@ -69,6 +76,7 @@ async def live_batch(s, chamber: str, revision: int, end_at: datetime) -> int:
 
 
 async def has_value(s, f: FeatureRef, run_id: str) -> bool:
+    """该特征版本在该执行上是否已有结果（含空值）。"""
     stmt = select(FeatureValue.run_id).where(
         FeatureValue.feature_id == f.feature_id, FeatureValue.version == f.version, FeatureValue.run_id == run_id
     )
@@ -77,7 +85,9 @@ async def has_value(s, f: FeatureRef, run_id: str) -> bool:
 
 async def write_value(s, batch_id: int, f: FeatureRef, run: RunRef, r: RunResult, overwrite: bool = False) -> bool:
     """写一个特征值并更新批次计数。overwrite=True 时先删后插（同一事务）。返回是否写入。"""
-    key = (FeatureValue.feature_id == f.feature_id, FeatureValue.version == f.version, FeatureValue.run_id == run.run_id)
+    key = (
+        FeatureValue.feature_id == f.feature_id, FeatureValue.version == f.version, FeatureValue.run_id == run.run_id
+    )
     if overwrite:
         await s.execute(delete(FeatureValue).where(*key))
     inserted = await s.scalar(
@@ -95,4 +105,6 @@ async def write_value(s, batch_id: int, f: FeatureRef, run: RunRef, r: RunResult
 
 
 async def add_run(s, batch_id: int) -> None:
-    await s.execute(update(FeatureBatch).where(FeatureBatch.batch_id == batch_id).values(run_total=FeatureBatch.run_total + 1))
+    """批次已处理的执行数 +1。"""
+    stmt = update(FeatureBatch).where(FeatureBatch.batch_id == batch_id)
+    await s.execute(stmt.values(run_total=FeatureBatch.run_total + 1))

@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """沙箱：在独立子进程里执行特征包的 fetch(run_id) 和 compute(data)。
 
 - 每个阶段用 SIGALRM 计时，超时记 FETCH_TIMEOUT / COMPUTE_ERROR；
@@ -174,6 +177,7 @@ class Sandbox:
         return RunResult(**out)
 
     def close(self) -> None:
+        """停止进程池并等待子进程退出。"""
         self.pool.stop()
         self.pool.join(timeout=5)
 
@@ -182,6 +186,7 @@ _sandbox: Sandbox | None = None
 
 
 def get_sandbox() -> Sandbox:
+    """进程内单例，首次使用时创建进程池。"""
     global _sandbox
     if _sandbox is None:
         _sandbox = Sandbox()
@@ -189,6 +194,7 @@ def get_sandbox() -> Sandbox:
 
 
 def close_sandbox() -> None:
+    """关闭单例进程池（服务退出时调用）。"""
     global _sandbox
     if _sandbox is not None:
         _sandbox.close()

@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """ei-feature-service 入口：uv run main.py
 
 一个进程同时提供 HTTP 接口，并在后台运行实时计算、补算 / 重算和定时任务。
@@ -19,6 +22,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    """启动时建表并启动后台任务，退出时停止后台任务并关闭连接池。"""
     db.configure()
     await db.init_schema()  # 建表语句均为 IF NOT EXISTS，可重复执行
     tasks = engine.start()
@@ -35,6 +39,7 @@ for module in (features, bindings, schedules, batches, values):
 
 @app.get("/healthz", include_in_schema=False)
 async def healthz() -> dict:
+    """健康检查。"""
     return {"ok": True}
 
 

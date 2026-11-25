@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """调度：各腔室的订阅状态与处理进度，暂停 / 恢复订阅。订阅状态以 GDE 为准。"""
 
 import asyncio
@@ -21,6 +24,7 @@ async def _status(sub_id: str | None) -> str:
 
 
 async def list_schedules(tool: str | None = None, chamber: str | None = None) -> list[dict]:
+    """有生效绑定的腔室：订阅状态（实时查 GDE）、特征数、处理进度。"""
     cond = [ChamberBinding.status == "active"]
     if tool:
         cond.append(ChamberBinding.tool == tool)
@@ -28,10 +32,14 @@ async def list_schedules(tool: str | None = None, chamber: str | None = None) ->
         cond.append(ChamberBinding.chamber == chamber)
     async with db.session() as s:
         rows = (await s.execute(select(ChamberBinding).where(*cond).order_by(ChamberBinding.chamber))).scalars().all()
+        feature_key = BindingItem.feature_id + "@" + BindingItem.version
+        same_revision = (
+            (ChamberBinding.chamber == BindingItem.chamber) & (ChamberBinding.revision == BindingItem.revision)
+        )
         counts = dict(
             (await s.execute(
-                select(BindingItem.chamber, func.count(func.distinct(BindingItem.feature_id + "@" + BindingItem.version)))
-                .join(ChamberBinding, (ChamberBinding.chamber == BindingItem.chamber) & (ChamberBinding.revision == BindingItem.revision))
+                select(BindingItem.chamber, func.count(func.distinct(feature_key)))
+                .join(ChamberBinding, same_revision)
                 .where(*cond).group_by(BindingItem.chamber)
             )).tuples().all()
         )
@@ -54,6 +62,7 @@ async def list_schedules(tool: str | None = None, chamber: str | None = None) ->
 
 
 async def set_paused(chamber: str, paused: bool) -> None:
+    """暂停或恢复腔室生效绑定对应的 GDE 订阅。"""
     async with db.session() as s:
         a = await active(s, chamber)
     if a is None:

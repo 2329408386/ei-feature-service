@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """补算 / 重算：领取排队中的批次，经 SDK 拉执行清单，逐个 run_id 计算。
 
 - fill：已有结果的跳过；overwrite：同一事务里先删后插，完成后把被覆盖的旧批次标记 superseded_by。
@@ -40,6 +43,7 @@ async def _with_retry(make_call):
 
 
 async def claim_next() -> FeatureBatch | None:
+    """领取最早的排队中批次并置为 running；多实例用 SKIP LOCKED 避免重复领取。"""
     async with db.session() as s:
         stmt = select(FeatureBatch).where(FeatureBatch.status == "queued").order_by(FeatureBatch.batch_id)
         b = (await s.execute(stmt.limit(1).with_for_update(skip_locked=True))).scalar_one_or_none()
@@ -90,28 +94,41 @@ async def _supersede(b: FeatureBatch) -> None:
         )
 
 
+async def _list_runs(b: FeatureBatch, recipes: list[str]) -> list:
+    """经 SDK 拉取批次时间范围内、属于这些配方的执行清单。"""
+    if not recipes:
+        return []
+    gde = get_gde()
+    return await _with_retry(lambda: asyncio.to_thread(gde.list_runs, b.chamber, recipes, b.data_from, b.data_to))
+
+
+async def _compute_one(b: FeatureBatch, f: FeatureRef, ref: RunRef, overwrite: bool) -> None:
+    """计算一个 (特征, 执行) 并写入；fill 模式下已有值则跳过。"""
+    if not overwrite:
+        async with db.session() as s:
+            if await has_value(s, f, ref.run_id):
+                return
+
+    async def call():
+        async with limits.slot(b.chamber, backfill=True):
+            return await get_sandbox().run(f.feature_id, f.version, f.package_hash, ref.run_id)
+
+    r = await _with_retry(call)
+    async with db.session() as s:
+        await write_value(s, b.batch_id, f, ref, r, overwrite=overwrite)
+
+
 async def execute(b: FeatureBatch) -> None:
+    """执行一个补算 / 重算批次：逐个 run_id 计算；每个执行前检查是否已被取消。"""
     recipes, plan = await _plan(b)
-    gde, overwrite = get_gde(), b.mode == "overwrite"
+    overwrite = b.mode == "overwrite"
     try:
-        runs = await _with_retry(lambda: asyncio.to_thread(gde.list_runs, b.chamber, recipes, b.data_from, b.data_to)) if recipes else []
-        for run in runs:
+        for run in await _list_runs(b, recipes):
             if await _status(b.batch_id) == "cancelled":
                 return
             ref = RunRef(run.run_id, run.tool, run.chamber, run.recipe, run.lot, run.wafer, run.end_at)
             for f in plan.get(run.recipe, []):
-                if not overwrite:
-                    async with db.session() as s:
-                        if await has_value(s, f, run.run_id):
-                            continue
-
-                async def call(f=f):
-                    async with limits.slot(b.chamber, backfill=True):
-                        return await get_sandbox().run(f.feature_id, f.version, f.package_hash, run.run_id)
-
-                r = await _with_retry(call)
-                async with db.session() as s:
-                    await write_value(s, b.batch_id, f, ref, r, overwrite=overwrite)
+                await _compute_one(b, f, ref, overwrite)
             async with db.session() as s:
                 await add_run(s, b.batch_id)
     except (BatchFailed, GdeError) as e:
@@ -123,6 +140,7 @@ async def execute(b: FeatureBatch) -> None:
 
 
 async def run_forever() -> None:
+    """后台循环：领取批次并执行，没有排队的批次时休眠 POLL_S 秒。"""
     while True:
         b = await claim_next()
         if b is None:

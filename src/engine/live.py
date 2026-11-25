@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """实时计算：监听 Redis Stream gde:run:done，每条通知按绑定计算该执行的全部特征。
 
 一条消息的所有特征写完才 XACK；GDE 不可用时不 ACK，等认领后重试；
@@ -10,7 +13,16 @@ import time
 from datetime import datetime
 
 from src.engine.sandbox import RunResult, get_sandbox
-from src.engine.writer import RunRef, active_revision, add_run, features_for, has_value, live_batch, write_value
+from src.engine.writer import (
+    FeatureRef,
+    RunRef,
+    active_revision,
+    add_run,
+    features_for,
+    has_value,
+    live_batch,
+    write_value,
+)
 from src.util import db
 from src.util.config import MAX_DELIVERIES
 from src.util.gde import GdeUnavailable
@@ -35,6 +47,7 @@ class LiveConsumer:
         self.stream = stream or RunDoneStream(get_redis())
 
     async def run_forever(self) -> None:
+        """持续读取新消息，并定期认领超时未确认的消息。"""
         await self.stream.ensure_group()
         last_claim = 0.0
         while True:
@@ -45,6 +58,7 @@ class LiveConsumer:
             await asyncio.gather(*(self.handle(msg_id, fields) for msg_id, fields in msgs))
 
     async def handle(self, msg_id: str, fields: dict[str, str]) -> None:
+        """处理一条通知：格式错误直接确认丢弃；处理完毕才确认，否则留待重投。"""
         try:
             run = parse(fields)
         except (KeyError, ValueError) as e:
@@ -71,20 +85,27 @@ class LiveConsumer:
             async with db.session() as s:
                 if await has_value(s, f, run.run_id):  # 重复通知：已算过就跳过
                     continue
-            if give_up:
-                r = RunResult(reason="FETCH_ERROR", reason_detail="超过最大投递次数")
-            else:
-                try:
-                    async with limits.slot(run.chamber):
-                        r = await get_sandbox().run(f.feature_id, f.version, f.package_hash, run.run_id)
-                    limits.breaker.success()
-                except GdeUnavailable as e:
-                    limits.breaker.failure()
-                    log.warning("GDE 不可用，%s 稍后重试：%s", run.run_id, e)
-                    return False
+            r = await self._compute(f, run, give_up)
+            if r is None:
+                return False
             async with db.session() as s:
                 wrote |= await write_value(s, batch_id, f, run, r)
         if wrote:
             async with db.session() as s:
                 await add_run(s, batch_id)
         return True
+
+    @staticmethod
+    async def _compute(f: FeatureRef, run: RunRef, give_up: bool) -> RunResult | None:
+        """在沙箱中计算一个特征；超过最大投递次数直接记空值；GDE 不可用返回 None（稍后重试）。"""
+        if give_up:
+            return RunResult(reason="FETCH_ERROR", reason_detail="超过最大投递次数")
+        try:
+            async with limits.slot(run.chamber):
+                r = await get_sandbox().run(f.feature_id, f.version, f.package_hash, run.run_id)
+        except GdeUnavailable as e:
+            limits.breaker.failure()
+            log.warning("GDE 不可用，%s 稍后重试：%s", run.run_id, e)
+            return None
+        limits.breaker.success()
+        return r

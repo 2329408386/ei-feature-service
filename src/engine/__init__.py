@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """后台计算：随服务一起启动、一起停止。"""
 
 import asyncio
@@ -19,6 +22,7 @@ async def _supervise(name: str, make) -> None:
 
 
 def start() -> list[asyncio.Task]:
+    """启动实时计算、补算 / 重算、定时任务三个后台任务。"""
     from src.engine import batch_runner, jobs
     from src.engine.live import LiveConsumer
 
@@ -31,6 +35,7 @@ def start() -> list[asyncio.Task]:
 
 
 async def stop(tasks: list[asyncio.Task]) -> None:
+    """取消后台任务并关闭沙箱进程池。"""
     from src.engine.sandbox import close_sandbox
 
     for t in tasks:

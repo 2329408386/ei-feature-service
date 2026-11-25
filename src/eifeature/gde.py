@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """特征包取数接口：只能在 fetch 中调用。
 
 沙箱在执行前通过 bind() 注入 GDE 客户端；进入 compute 阶段后再调用会抛 RuntimeError，

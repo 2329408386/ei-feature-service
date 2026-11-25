@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """定时任务：实时批次收尾、补做 gde_outbox 中的 SDK 调用。"""
 
 import asyncio
@@ -21,7 +24,10 @@ async def close_live_batches() -> int:
     async with db.session() as s:
         result = await s.execute(
             update(FeatureBatch)
-            .where(FeatureBatch.mode == "live", FeatureBatch.status == "running", FeatureBatch.data_to < now() - CLOSE_GRACE)
+            .where(
+                FeatureBatch.mode == "live", FeatureBatch.status == "running",
+                FeatureBatch.data_to < now() - CLOSE_GRACE,
+            )
             .values(status="done", finished_at=now())
         )
         return result.rowcount
@@ -55,4 +61,5 @@ async def _every(seconds: float, fn) -> None:
 
 
 async def run_forever() -> None:
+    """后台循环：定时收尾实时批次、补做 gde_outbox。"""
     await asyncio.gather(_every(CLOSE_EVERY_S, close_live_batches), _every(OUTBOX_EVERY_S, process_outbox))

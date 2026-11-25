@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """Redis Stream：读取执行结束通知、确认、认领超时未确认的消息。"""
 
 import os
@@ -16,6 +19,7 @@ Message = tuple[str, dict[str, str]]  # (消息 ID, 字段)
 
 @cache
 def get_redis() -> aioredis.Redis:
+    """进程内单例。"""
     return aioredis.from_url(settings.redis.url, decode_responses=True)
 
 
@@ -47,4 +51,5 @@ class RunDoneStream:
         return pending[0]["times_delivered"] if pending else 0
 
     async def ack(self, msg_id: str) -> None:
+        """确认消息已处理完。"""
         await self.r.xack(self.stream, self.group, msg_id)

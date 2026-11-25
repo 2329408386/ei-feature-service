@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """腔室绑定：校验、提交、审核、撤回、查询、导入导出，以及特征下线时的自动修改。
 
 修订状态：(新建) -> pending --approve(他人)--> active（原 active -> superseded）
@@ -15,17 +18,28 @@ from src.api.schemas import EXPORT_FORMAT, BindingSpec
 from src.model.tables import BindingItem, ChamberBinding, Feature, GdeOutbox
 from src.util import db
 from src.util.auth import SYSTEM
-from src.util.errors import AppError, conflict, forbidden, gde_unavailable, invalid, invalid_state, not_found
+from src.util.errors import (
+    AppError,
+    conflict,
+    error_list,
+    forbidden,
+    gde_unavailable,
+    invalid,
+    invalid_state,
+    not_found,
+)
 from src.util.gde import GdeError, get_gde
 from src.util.timeutil import now
 
 
 # ---------------------------------------------------------------- 小工具
 def recipes_of(spec: dict) -> list[str]:
+    """spec 中全部规则的配方，去重排序（即订阅范围）。"""
     return sorted({r for rule in spec["rules"] for r in rule["recipes"]})
 
 
 def features_of(spec: dict) -> set[str]:
+    """spec 中全部规则的特征，形如 id@version。"""
     return {f"{fid}@{ver}" for rule in spec["rules"] for fid, ver in rule["features"].items()}
 
 
@@ -36,7 +50,10 @@ def _normalize(spec: BindingSpec, recipe_order: list[str]) -> dict:
         "tool": spec.tool,
         "chamber": spec.chamber,
         "rules": [
-            {"recipes": sorted(set(r.recipes), key=lambda x: order.get(x, len(order))), "features": dict(sorted(r.features.items()))}
+            {
+                "recipes": sorted(set(r.recipes), key=lambda x: order.get(x, len(order))),
+                "features": dict(sorted(r.features.items())),
+            }
             for r in spec.rules
         ],
     }
@@ -56,10 +73,12 @@ async def _revision(s, chamber: str, status: str) -> ChamberBinding | None:
 
 
 async def active(s, chamber: str) -> ChamberBinding | None:
+    """腔室的生效修订（加行锁），没有则返回 None。"""
     return await _revision(s, chamber, "active")
 
 
 async def pending(s, chamber: str) -> ChamberBinding | None:
+    """腔室的待审核修订（加行锁），没有则返回 None。"""
     return await _revision(s, chamber, "pending")
 
 
@@ -73,7 +92,14 @@ async def validate(s, spec: BindingSpec) -> tuple[dict, list[dict]]:
     if tool != spec.tool:
         errors.append({"path": "tool", "message": f"腔室 {spec.chamber} 属于机台 {tool}，不是 {spec.tool}"})
     known = await _gde(gde.chamber_recipes, spec.chamber)
+    errors += _check_rules(spec, known)
+    errors += await _check_features(s, spec)
+    return _normalize(spec, known), errors
 
+
+def _check_rules(spec: BindingSpec, known: list[str]) -> list[dict]:
+    """规则结构：至少一条规则，每条规则有配方和特征，配方属于该腔室且不跨规则重复。"""
+    errors = []
     if not spec.rules:
         errors.append({"path": "rules", "message": "至少需要一条规则"})
     seen: dict[str, int] = {}
@@ -83,22 +109,33 @@ async def validate(s, spec: BindingSpec) -> tuple[dict, list[dict]]:
         if not rule.features:
             errors.append({"path": f"rules[{i}].features", "message": "至少选择一个特征"})
         for j, recipe in enumerate(rule.recipes):
+            path = f"rules[{i}].recipes[{j}]"
             if recipe not in known:
-                errors.append({"path": f"rules[{i}].recipes[{j}]", "message": f"配方 {recipe} 不在腔室 {spec.chamber}"})
+                errors.append({"path": path, "message": f"配方 {recipe} 不在腔室 {spec.chamber}"})
             elif seen.setdefault(recipe, i) != i:
-                errors.append({"path": f"rules[{i}].recipes[{j}]", "message": f"配方 {recipe} 已在规则 {seen[recipe] + 1} 中"})
+                errors.append({"path": path, "message": f"配方 {recipe} 已在规则 {seen[recipe] + 1} 中"})
+    return errors
 
-    wanted = {(fid, ver) for rule in spec.rules for fid, ver in rule.features.items()}
-    if wanted:
-        stmt = select(Feature.feature_id, Feature.version).where(
-            tuple_(Feature.feature_id, Feature.version).in_(wanted), Feature.status == "published"
-        )
-        published = set((await s.execute(stmt)).tuples().all())
-        for i, rule in enumerate(spec.rules):
-            for fid, ver in rule.features.items():
-                if (fid, ver) not in published:
-                    errors.append({"path": f"rules[{i}].features.{fid}", "message": f"{fid}@{ver} 不存在或未发布"})
-    return _normalize(spec, known), errors
+
+async def _check_features(s, spec: BindingSpec) -> list[dict]:
+    """引用的特征必须存在且已发布。"""
+    wanted = {
+        (fid, ver)
+        for rule in spec.rules
+        for fid, ver in rule.features.items()
+    }
+    if not wanted:
+        return []
+    stmt = select(Feature.feature_id, Feature.version).where(
+        tuple_(Feature.feature_id, Feature.version).in_(wanted), Feature.status == "published"
+    )
+    published = set((await s.execute(stmt)).tuples().all())
+    return [
+        {"path": f"rules[{i}].features.{fid}", "message": f"{fid}@{ver} 不存在或未发布"}
+        for i, rule in enumerate(spec.rules)
+        for fid, ver in rule.features.items()
+        if (fid, ver) not in published
+    ]
 
 
 async def _check_state(s, chamber: str, spec: dict) -> None:
@@ -110,7 +147,9 @@ async def _check_state(s, chamber: str, spec: dict) -> None:
         raise conflict("NO_CHANGE", f"与生效修订 {a.revision} 相同")
 
 
-async def _insert(s, spec: dict, *, status: str, source: str, user: str, base_revision: int | None, **extra) -> ChamberBinding:
+async def _insert(
+    s, spec: dict, *, status: str, source: str, user: str, base_revision: int | None, **extra
+) -> ChamberBinding:
     """新增修订（修订号 = 最大值 + 1），并在同一事务里展开写 binding_item。调用方须已持有腔室锁。"""
     chamber = spec["chamber"]
     last = await s.scalar(select(func.max(ChamberBinding.revision)).where(ChamberBinding.chamber == chamber))
@@ -120,18 +159,19 @@ async def _insert(s, spec: dict, *, status: str, source: str, user: str, base_re
     )
     s.add(row)
     await s.flush()
-    s.add_all(
-        BindingItem(chamber=chamber, revision=row.revision, rule_no=i, recipe=recipe, feature_id=fid, version=ver)
-        for i, rule in enumerate(spec["rules"], start=1)
-        for recipe in rule["recipes"]
-        for fid, ver in rule["features"].items()
-    )
+    for i, rule in enumerate(spec["rules"], start=1):
+        s.add_all(
+            BindingItem(chamber=chamber, revision=row.revision, rule_no=i, recipe=recipe, feature_id=fid, version=ver)
+            for recipe in rule["recipes"]
+            for fid, ver in rule["features"].items()
+        )
     await s.flush()
     return row
 
 
 # ---------------------------------------------------------------- 提交、审核、撤回
 async def submit(chamber: str, body: BindingSpec, base_revision: int | None, user: str, source: str) -> ChamberBinding:
+    """校验并生成待审核修订。同一腔室同时只能有一个待审核修订。"""
     if body.chamber != chamber:
         raise invalid("BINDING_INVALID", "绑定校验失败", [{"path": "chamber", "message": "与路径中的腔室不一致"}])
     async with db.session() as s:
@@ -163,10 +203,10 @@ async def review(chamber: str, revision: int, decision: str, comment: str | None
                 raise invalid_state("只有待审核的修订可以审核", p.status)
             if p.created_by == user:
                 raise forbidden("审核人不能是提交人")
+            if decision == "reject" and not comment:
+                raise invalid("VALIDATION_ERROR", "退回时必须填写审核意见")
             p.reviewed_by, p.reviewed_at, p.review_note = user, now(), comment
             if decision == "reject":
-                if not comment:
-                    raise invalid("VALIDATION_ERROR", "退回时必须填写审核意见")
                 p.status = "rejected"
                 return p
 
@@ -188,6 +228,7 @@ async def review(chamber: str, revision: int, decision: str, comment: str | None
 
 
 async def withdraw(chamber: str, revision: int, user: str) -> ChamberBinding:
+    """提交人撤回自己的待审核修订。"""
     async with db.session() as s:
         p = await _get_revision(s, chamber, revision)
         if p.status != "pending":
@@ -201,14 +242,17 @@ async def withdraw(chamber: str, revision: int, user: str) -> ChamberBinding:
 # ---------------------------------------------------------------- 查询与导出
 async def list_bindings(tool=None, chamber=None, recipe=None, feature=None, status=None) -> list[dict]:
     """每个腔室一项：{tool, chamber, active, pending}。recipe / feature 按生效修订的 binding_item 过滤。
-    未绑定的腔室后端不知道，由前端用 GDE 元数据补齐。"""
+
+    未绑定的腔室后端不知道，由前端用 GDE 元数据补齐。
+    """
     cond = [ChamberBinding.status.in_(["active", "pending"])]
     if tool:
         cond.append(ChamberBinding.tool == tool)
     if chamber:
         cond.append(ChamberBinding.chamber == chamber)
     async with db.session() as s:
-        rows = (await s.execute(select(ChamberBinding).where(*cond).order_by(ChamberBinding.tool, ChamberBinding.chamber))).scalars().all()
+        stmt = select(ChamberBinding).where(*cond).order_by(ChamberBinding.tool, ChamberBinding.chamber)
+        rows = (await s.execute(stmt)).scalars().all()
         matched = None
         if recipe or feature:
             q = select(BindingItem.chamber).join(
@@ -233,6 +277,7 @@ async def list_bindings(tool=None, chamber=None, recipe=None, feature=None, stat
 
 
 async def get_revisions(chamber: str, revision: int | None = None):
+    """不带 revision 返回腔室全部修订（新的在前）；带 revision 返回单个修订。"""
     async with db.session() as s:
         if revision is not None:
             return await _get_revision(s, chamber, revision)
@@ -265,7 +310,7 @@ async def import_bindings(bindings: list[dict], dry_run: bool, user: str) -> lis
             try:
                 spec = BindingSpec.model_validate(raw)
             except ValidationError as e:
-                res["message"], res["errors"] = "格式错误", [{"path": ".".join(map(str, x["loc"])), "message": x["msg"]} for x in e.errors()]
+                res["message"], res["errors"] = "格式错误", error_list(e)
                 continue
             if chamber in seen:
                 res["message"] = "文件中重复出现"
@@ -289,15 +334,20 @@ async def import_bindings(bindings: list[dict], dry_run: bool, user: str) -> lis
             if raw.get("revision") and a and raw["revision"] != a.revision:
                 res["message"] += f"（文件基于修订 {raw['revision']}，当前生效修订 {a.revision}）"
             if not dry_run:
-                row = await _insert(s, normalized, status="pending", source="import", user=user, base_revision=a.revision if a else None)
+                row = await _insert(
+                    s, normalized, status="pending", source="import", user=user,
+                    base_revision=a.revision if a else None,
+                )
                 res["revision"] = row.revision
     return results
 
 
 # ---------------------------------------------------------------- 特征下线
 async def remove_feature(s, feature_id: str, version: str) -> list[dict]:
-    """在调用方的事务里：从所有生效修订中移除该特征（生成 system 修订直接生效），撤回含该特征的待审核修订；
-    订阅变更写入 gde_outbox，提交后再执行。"""
+    """在调用方的事务里：从所有生效修订中移除该特征（生成 system 修订直接生效），撤回含该特征的待审核修订。
+
+    订阅变更写入 gde_outbox，提交后再执行。
+    """
     joined = select(ChamberBinding).join(
         BindingItem, (BindingItem.chamber == ChamberBinding.chamber) & (BindingItem.revision == ChamberBinding.revision)
     ).where(BindingItem.feature_id == feature_id, BindingItem.version == version).distinct()
@@ -329,6 +379,8 @@ async def remove_feature(s, feature_id: str, version: str) -> list[dict]:
         if a.gde_sub_id and not keep:
             s.add(GdeOutbox(action="cancel_subscription", payload={"sub_id": a.gde_sub_id}))
         elif keep and recipes_of(spec) != recipes_of(a.spec):
-            s.add(GdeOutbox(action="update_subscription", payload={"sub_id": a.gde_sub_id, "recipes": recipes_of(spec)}))
-        affected.append({"chamber": a.chamber, "new_revision": new.revision, "subscription": "kept" if keep else "cancelled"})
+            payload = {"sub_id": a.gde_sub_id, "recipes": recipes_of(spec)}
+            s.add(GdeOutbox(action="update_subscription", payload=payload))
+        subscription = "kept" if keep else "cancelled"
+        affected.append({"chamber": a.chamber, "new_revision": new.revision, "subscription": subscription})
     return affected

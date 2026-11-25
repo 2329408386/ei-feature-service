@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """时间序列：t 为相对执行开始的秒数（升序），v 为对应的值。不可变，所有操作返回新对象。"""
 
 from dataclasses import dataclass, field

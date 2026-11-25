@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """特征包文件存储：MinIO（生产）或本地目录（endpoint 为 file:// 时，用于开发和测试）。
 
 对象键：features/{feature_id}/{version}/feature.json、compute.py
@@ -16,6 +19,7 @@ SPEC_FILE, CODE_FILE = "feature.json", "compute.py"
 
 
 def package_hash(spec: bytes, code: bytes) -> str:
+    """特征包内容 hash：feature.json 和 compute.py 一起计算。"""
     return hashlib.sha256(spec + b"\n" + code).hexdigest()
 
 
@@ -28,14 +32,17 @@ class LocalStore:
         self.root = root
 
     def put(self, feature_id: str, version: str, name: str, data: bytes) -> None:
+        """写入特征包中的一个文件。"""
         path = self.root / _key(feature_id, version, name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
     def get(self, feature_id: str, version: str, name: str) -> bytes:
+        """读取特征包中的一个文件。"""
         return (self.root / _key(feature_id, version, name)).read_bytes()
 
     def delete(self, feature_id: str, version: str) -> None:
+        """删除整个特征包目录。"""
         shutil.rmtree(self.root / _key(feature_id, version), ignore_errors=True)
 
 
@@ -49,9 +56,11 @@ class MinioStore:
             self.client.make_bucket(self.bucket)
 
     def put(self, feature_id, version, name, data):
+        """写入特征包中的一个文件。"""
         self.client.put_object(self.bucket, _key(feature_id, version, name), io.BytesIO(data), len(data))
 
     def get(self, feature_id, version, name):
+        """读取特征包中的一个文件。"""
         resp = self.client.get_object(self.bucket, _key(feature_id, version, name))
         try:
             return resp.read()
@@ -60,11 +69,13 @@ class MinioStore:
             resp.release_conn()
 
     def delete(self, feature_id, version):
+        """删除特征包的全部文件。"""
         for name in (SPEC_FILE, CODE_FILE):
             self.client.remove_object(self.bucket, _key(feature_id, version, name))
 
 
 def make_store(cfg: MinioConfig) -> LocalStore | MinioStore:
+    """按配置创建存储：endpoint 以 file:// 开头用本地目录，否则用 MinIO。"""
     if cfg.endpoint.startswith("file://"):
         path = Path(cfg.endpoint.removeprefix("file://"))
         return LocalStore(path if path.is_absolute() else ROOT / path)
@@ -73,10 +84,12 @@ def make_store(cfg: MinioConfig) -> LocalStore | MinioStore:
 
 @cache
 def get_store() -> LocalStore | MinioStore:
+    """进程内单例。"""
     return make_store(settings.minio)
 
 
 def package_uri(feature_id: str, version: str) -> str:
+    """特征包所在位置，用于展示。"""
     return f"{settings.minio.endpoint.rstrip('/')}/{settings.minio.bucket}/{_key(feature_id, version)}"
 
 

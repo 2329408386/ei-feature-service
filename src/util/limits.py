@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """取数并发控制：全局上限、每腔室上限、补算上限，以及 GDE 熔断器。"""
 
 import asyncio
@@ -23,13 +26,16 @@ class Breaker:
         self.count, self.open_until = 0, 0.0
 
     def check(self) -> None:
+        """熔断中直接抛 GdeUnavailable。"""
         if time.monotonic() < self.open_until:
             raise GdeUnavailable("熔断中：GDE 连续不可用，暂停取数")
 
     def success(self) -> None:
+        """记录一次成功：失败计数清零。"""
         self.count = 0
 
     def failure(self) -> None:
+        """记录一次失败：连续失败达到阈值后打开熔断。"""
         if time.monotonic() < self.open_until:  # 熔断期间被拒绝的调用不再计数
             return
         self.count += 1

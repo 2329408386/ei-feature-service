@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """ORM 映射。表结构以 schema.sql 为准，这里只做映射，不用于建表。"""
 
 from datetime import datetime
@@ -33,6 +36,7 @@ class Feature(Base):
 
     @property
     def ref(self) -> str:
+        """形如 id@version。"""
         return f"{self.feature_id}@{self.version}"
 
 
@@ -57,7 +61,9 @@ class ChamberBinding(Base):
 
 class BindingItem(Base):
     __tablename__ = "binding_item"
-    __table_args__ = (ForeignKeyConstraint(["chamber", "revision"], ["chamber_binding.chamber", "chamber_binding.revision"]),)
+    __table_args__ = (
+        ForeignKeyConstraint(["chamber", "revision"], ["chamber_binding.chamber", "chamber_binding.revision"]),
+    )
 
     chamber: Mapped[str] = mapped_column(Text, primary_key=True)
     revision: Mapped[int] = mapped_column(Integer, primary_key=True)
