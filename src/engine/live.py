@@ -46,6 +46,21 @@ class LiveConsumer:
     def __init__(self, stream: RunDoneStream | None = None):
         self.stream = stream or RunDoneStream(get_redis())
 
+    @staticmethod
+    async def _compute(f: FeatureRef, run: RunRef, give_up: bool) -> RunResult | None:
+        """在沙箱中计算一个特征；超过最大投递次数直接记空值；GDE 不可用返回 None（稍后重试）。"""
+        if give_up:
+            return RunResult(reason="FETCH_ERROR", reason_detail="超过最大投递次数")
+        try:
+            async with limits.slot(run.chamber):
+                r = await get_sandbox().run(f.feature_id, f.version, f.package_hash, run.run_id)
+        except GdeUnavailable as e:
+            limits.breaker.failure()
+            log.warning("GDE 不可用，%s 稍后重试：%s", run.run_id, e)
+            return None
+        limits.breaker.success()
+        return r
+
     async def run_forever(self) -> None:
         """持续读取新消息，并定期认领超时未确认的消息。"""
         await self.stream.ensure_group()
@@ -94,18 +109,3 @@ class LiveConsumer:
             async with db.session() as s:
                 await add_run(s, batch_id)
         return True
-
-    @staticmethod
-    async def _compute(f: FeatureRef, run: RunRef, give_up: bool) -> RunResult | None:
-        """在沙箱中计算一个特征；超过最大投递次数直接记空值；GDE 不可用返回 None（稍后重试）。"""
-        if give_up:
-            return RunResult(reason="FETCH_ERROR", reason_detail="超过最大投递次数")
-        try:
-            async with limits.slot(run.chamber):
-                r = await get_sandbox().run(f.feature_id, f.version, f.package_hash, run.run_id)
-        except GdeUnavailable as e:
-            limits.breaker.failure()
-            log.warning("GDE 不可用，%s 稍后重试：%s", run.run_id, e)
-            return None
-        limits.breaker.success()
-        return r

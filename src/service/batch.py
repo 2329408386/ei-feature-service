@@ -3,10 +3,9 @@
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """计算批次：创建补算 / 重算、查询、取消。实际执行在 src/engine/batch_runner.py。"""
 
-from datetime import date
-
 from sqlalchemy import func, select
 
+from src.api.schemas import BatchIn
 from src.model.tables import FeatureBatch
 from src.service.binding import active, features_of
 from src.util import db
@@ -15,10 +14,9 @@ from src.util.errors import invalid, invalid_state, not_found
 from src.util.timeutil import day_range, now, today
 
 
-async def create(
-    chamber: str, mode: str, features: list[str], start: date, end: date, reason: str, user: str
-) -> FeatureBatch:
+async def create(body: BatchIn, user: str) -> FeatureBatch:
     """校验日期范围和特征（须在腔室生效修订中）后创建排队中的补算 / 重算批次。"""
+    chamber, features, start, end = body.chamber, body.features, body.from_, body.to
     errors = []
     if start > end:
         errors.append({"path": "from", "message": "开始日期不能晚于结束日期"})
@@ -37,8 +35,8 @@ async def create(
             raise invalid("VALIDATION_ERROR", "参数错误", errors)
         data_from, data_to = day_range(start, end)
         row = FeatureBatch(
-            mode=mode, status="queued", chamber=chamber, binding_revision=a.revision, features=sorted(set(features)),
-            data_from=data_from, data_to=data_to, reason=reason, created_by=user,
+            mode=body.mode, status="queued", chamber=chamber, binding_revision=a.revision, features=sorted(set(features)),
+            data_from=data_from, data_to=data_to, reason=body.reason, created_by=user,
         )
         s.add(row)
     return row

@@ -17,7 +17,7 @@ router = APIRouter(prefix="/batches", tags=["批次"])
 @router.post("", status_code=201, response_model=BatchOut)
 async def create(body: BatchIn, user: User):
     """提交补算（fill）或重算（overwrite），进入队列由后台执行。"""
-    return await svc.create(body.chamber, body.mode, body.features, body.from_, body.to, body.reason, user)
+    return await svc.create(body, user)
 
 
 @router.get("", response_model=Page[BatchOut])

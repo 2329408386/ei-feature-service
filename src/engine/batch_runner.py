@@ -14,7 +14,7 @@ import logging
 from sqlalchemy import select, text
 
 from src.engine.sandbox import get_sandbox
-from src.engine.writer import FeatureRef, RunRef, add_run, has_value, write_value
+from src.engine.writer import FeatureRef, RunRef, add_run, has_value, overwrite_value, write_value
 from src.model.tables import BindingItem, ChamberBinding, Feature, FeatureBatch
 from src.service.binding import recipes_of
 from src.util import db
@@ -115,7 +115,8 @@ async def _compute_one(b: FeatureBatch, f: FeatureRef, ref: RunRef, overwrite: b
 
     r = await _with_retry(call)
     async with db.session() as s:
-        await write_value(s, b.batch_id, f, ref, r, overwrite=overwrite)
+        write = overwrite_value if overwrite else write_value
+        await write(s, b.batch_id, f, ref, r)
 
 
 async def execute(b: FeatureBatch) -> None:

@@ -48,26 +48,26 @@ async def delete_draft(feature_id: str, version: str, user: User):
     await svc.delete_draft(feature_id, version, user)
 
 
-@router.post(PATH + "/submit", response_model=FeatureOut)
+@router.post(f"{PATH}/submit", response_model=FeatureOut)
 async def submit(feature_id: str, version: str, user: User):
     """草稿提交评审。"""
     return await svc.submit(feature_id, version, user)
 
 
-@router.post(PATH + "/review", response_model=FeatureOut)
+@router.post(f"{PATH}/review", response_model=FeatureOut)
 async def review(feature_id: str, version: str, body: FeatureReviewIn, user: User):
     """评审：通过则发布，驳回则退回草稿。"""
-    return await svc.review(feature_id, version, body.decision, body.comment, body.trial_runs, user)
+    return await svc.review(feature_id, version, body, user)
 
 
-@router.post(PATH + "/retire", response_model=RetireOut)
+@router.post(f"{PATH}/retire", response_model=RetireOut)
 async def retire(feature_id: str, version: str, body: RetireIn, user: User):
     """下线特征，并自动修改引用它的腔室绑定。"""
     row, affected = await svc.retire(feature_id, version, body.reason, user)
     return {"feature": row, "affected": affected}
 
 
-@router.post(PATH + "/trial", response_model=TrialOut)
+@router.post(f"{PATH}/trial", response_model=TrialOut)
 async def trial(feature_id: str, version: str, body: TrialIn):
     """试跑：执行一次 fetch + compute，结果不写库。"""
     return await svc.trial(feature_id, version, body.run_id)

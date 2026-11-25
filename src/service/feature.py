@@ -11,6 +11,7 @@ import asyncio
 
 from sqlalchemy import func, or_, select, text
 
+from src.api.schemas import FeatureReviewIn
 from src.engine.sandbox import get_sandbox
 from src.model.tables import Feature
 from src.service import binding
@@ -107,11 +108,10 @@ async def submit(feature_id: str, version: str, user: str) -> Feature:
     return row
 
 
-async def review(
-    feature_id: str, version: str, decision: str, comment: str | None, trial_runs: list[str], user: str
-) -> Feature:
+async def review(feature_id: str, version: str, body: FeatureReviewIn, user: str) -> Feature:
     """评审（评审人不能是提交人）：通过需至少试跑过一个 run_id，退回需填写意见。"""
-    comment = (comment or "").strip() or None
+    decision, trial_runs = body.decision, body.trial_runs
+    comment = (body.comment or "").strip() or None
     async with db.session() as s:
         row = await _get(s, feature_id, version, lock=True)
         if row.status != "review":

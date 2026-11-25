@@ -83,13 +83,19 @@ async def has_value(s, f: FeatureRef, run_id: str) -> bool:
     return await s.scalar(stmt) is not None
 
 
-async def write_value(s, batch_id: int, f: FeatureRef, run: RunRef, r: RunResult, overwrite: bool = False) -> bool:
-    """写一个特征值并更新批次计数。overwrite=True 时先删后插（同一事务）。返回是否写入。"""
-    key = (
-        FeatureValue.feature_id == f.feature_id, FeatureValue.version == f.version, FeatureValue.run_id == run.run_id
+async def overwrite_value(s, batch_id: int, f: FeatureRef, run: RunRef, r: RunResult) -> bool:
+    """重算：同一事务里先删除旧值，再按 write_value 写入。返回是否写入。"""
+    await s.execute(
+        delete(FeatureValue).where(
+            FeatureValue.feature_id == f.feature_id, FeatureValue.version == f.version,
+            FeatureValue.run_id == run.run_id,
+        )
     )
-    if overwrite:
-        await s.execute(delete(FeatureValue).where(*key))
+    return await write_value(s, batch_id, f, run, r)
+
+
+async def write_value(s, batch_id: int, f: FeatureRef, run: RunRef, r: RunResult) -> bool:
+    """写一个特征值并更新批次计数。已有结果时不写、不计数。返回是否写入。"""
     inserted = await s.scalar(
         insert(FeatureValue).values(
             feature_id=f.feature_id, version=f.version, run_id=run.run_id, tool=run.tool, chamber=run.chamber,

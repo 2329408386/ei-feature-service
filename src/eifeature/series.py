@@ -22,10 +22,6 @@ class Series:
     def __len__(self) -> int:
         return len(self.t)
 
-    def _keep(self, keep, shift: float = 0.0) -> "Series":
-        pairs = [(t - shift, v) for t, v in zip(self.t, self.v) if keep(t)]
-        return Series([p[0] for p in pairs], [p[1] for p in pairs], self.step_ranges)
-
     def steps(self, *step_ids: int) -> "Series":
         """只保留这些步骤时间段内的点；t 改为相对第一个所选步骤的开始。"""
         chosen = [s for s in self.step_ranges if s.id in step_ids]
@@ -37,6 +33,10 @@ class Series:
     def window(self, t0: float, t1: float) -> "Series":
         """保留 t0 ≤ t ≤ t1 的点。"""
         return self._keep(lambda t: t0 <= t <= t1)
+
+    def _keep(self, keep, shift: float = 0.0) -> "Series":
+        pairs = [(t - shift, v) for t, v in zip(self.t, self.v) if keep(t)]
+        return Series([p[0] for p in pairs], [p[1] for p in pairs], self.step_ranges)
 
 
 def as_series(s: "Series | dict") -> Series:

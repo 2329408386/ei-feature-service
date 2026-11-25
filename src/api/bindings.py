@@ -72,13 +72,13 @@ async def submit(chamber: str, body: BindingSubmitIn, user: User,
     return await svc.submit(chamber, body, body.base_revision, user, source)
 
 
-@router.post(REV + "/review", response_model=RevisionOut)
+@router.post(f"{REV}/review", response_model=RevisionOut)
 async def review(chamber: str, revision: int, body: RevisionReviewIn, user: User):
     """审核待审核修订：通过后生效，驳回则结束。"""
     return await svc.review(chamber, revision, body.decision, body.comment, user)
 
 
-@router.post(REV + "/withdraw", response_model=RevisionOut)
+@router.post(f"{REV}/withdraw", response_model=RevisionOut)
 async def withdraw(chamber: str, revision: int, user: User):
     """提交人撤回自己的待审核修订。"""
     return await svc.withdraw(chamber, revision, user)

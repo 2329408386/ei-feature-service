@@ -110,7 +110,7 @@ class SdkGdeClient:
     """
 
     def __init__(self, sdk_config: dict):
-        self.sdk_config = sdk_config  # TODO: self.sdk = gde_sdk.Client(**sdk_config)
+        self.sdk_config = sdk_config  # 接入 SDK 后在此创建客户端：self.sdk = gde_sdk.Client(**sdk_config)
 
     def __getattr__(self, name: str):
         raise NotImplementedError(f"TODO: GDE SDK 尚未接入，无法调用 {name}；本地开发请在 config.json 设置 gde.fake=true")
@@ -150,17 +150,15 @@ class FakeGdeClient:
     """
 
     def __init__(self):
-        self.chambers = {c: (t, rs) for t, cs in FAKE_TOOLS.items() for c, rs in cs.items()}
+        self.chambers = {
+            c: (t, rs)
+            for t, cs in FAKE_TOOLS.items()
+            for c, rs in cs.items()
+        }
         self.subs: dict[str, dict] = {}
         self.fail_next = 0
         self._ids = itertools.count(1)
         self._lock = threading.Lock()
-
-    def _maybe_fail(self) -> None:
-        with self._lock:
-            if self.fail_next > 0:
-                self.fail_next -= 1
-                raise GdeUnavailable("fake: 模拟 GDE 不可用")
 
     # ---- 元数据
     def chamber_tool(self, chamber):
@@ -179,11 +177,6 @@ class FakeGdeClient:
         sub_id = f"gde-sub-{next(self._ids):04d}"
         self.subs[sub_id] = {"tool": tool, "chamber": chamber, "recipes": list(recipes), "status": "running"}
         return sub_id
-
-    def _sub(self, sub_id) -> dict:
-        if sub_id not in self.subs:
-            raise GdeNotFound(f"订阅 {sub_id} 不存在")
-        return self.subs[sub_id]
 
     def update_subscription(self, sub_id, recipes):
         """见 GdeClient.update_subscription。"""
@@ -206,15 +199,6 @@ class FakeGdeClient:
         return self._sub(sub_id)["status"]
 
     # ---- 执行与数据
-    def _make_run(self, run_id: str, chamber: str, end_at: datetime) -> Run:
-        tool, recipes = self.chambers[chamber]
-        n = _seed(run_id)
-        return Run(
-            run_id=run_id, tool=tool, chamber=chamber, recipe=recipes[n % len(recipes)],
-            lot=f"L{n % 900 + 100}", wafer=f"W{n % 10000:04d}",
-            start_at=end_at - timedelta(seconds=FAKE_STEPS[-1].end_s), end_at=end_at, steps=list(FAKE_STEPS),
-        )
-
     def list_runs(self, chamber, recipes, start, end):
         """每个整点的 :15 和 :45 各生成一次执行，只保留 recipe 在 recipes 中的。"""
         self._maybe_fail()
@@ -228,7 +212,8 @@ class FakeGdeClient:
         self._maybe_fail()
         if run_id.startswith("RUN-MISSING"):
             raise GdeNotFound(f"执行 {run_id} 不存在")
-        if m := _RUN_ID.match(run_id):
+        m = _RUN_ID.match(run_id)
+        if m:
             end_at = datetime.strptime(m.group(2), "%Y%m%d%H%M").replace(tzinfo=ZONE)
             return self._make_run(run_id, m.group(1), end_at)
         n = _seed(run_id)
@@ -248,6 +233,27 @@ class FakeGdeClient:
         t = [i / 10 for i in range(0, int(FAKE_STEPS[-1].end_s * 10) + 1, step)]
         v = [base + slope * x + rnd.gauss(0, 0.5) for x in t]
         return t, v
+
+    # ---- 内部辅助
+    def _maybe_fail(self) -> None:
+        with self._lock:
+            if self.fail_next > 0:
+                self.fail_next -= 1
+                raise GdeUnavailable("fake: 模拟 GDE 不可用")
+
+    def _sub(self, sub_id) -> dict:
+        if sub_id not in self.subs:
+            raise GdeNotFound(f"订阅 {sub_id} 不存在")
+        return self.subs[sub_id]
+
+    def _make_run(self, run_id: str, chamber: str, end_at: datetime) -> Run:
+        tool, recipes = self.chambers[chamber]
+        n = _seed(run_id)
+        return Run(
+            run_id=run_id, tool=tool, chamber=chamber, recipe=recipes[n % len(recipes)],
+            lot=f"L{n % 900 + 100}", wafer=f"W{n % 10000:04d}",
+            start_at=end_at - timedelta(seconds=FAKE_STEPS[-1].end_s), end_at=end_at, steps=list(FAKE_STEPS),
+        )
 
 
 # ====================================================================== 获取客户端

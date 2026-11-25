@@ -130,17 +130,18 @@ async def _check_features(s, spec: BindingSpec) -> list[dict]:
         tuple_(Feature.feature_id, Feature.version).in_(wanted), Feature.status == "published"
     )
     published = set((await s.execute(stmt)).tuples().all())
-    return [
-        {"path": f"rules[{i}].features.{fid}", "message": f"{fid}@{ver} 不存在或未发布"}
-        for i, rule in enumerate(spec.rules)
-        for fid, ver in rule.features.items()
-        if (fid, ver) not in published
-    ]
+    errors = []
+    for i, rule in enumerate(spec.rules):
+        for fid, ver in rule.features.items():
+            if (fid, ver) not in published:
+                errors.append({"path": f"rules[{i}].features.{fid}", "message": f"{fid}@{ver} 不存在或未发布"})
+    return errors
 
 
 async def _check_state(s, chamber: str, spec: dict) -> None:
     """已有待审核 → PENDING_EXISTS；与生效修订一致 → NO_CHANGE。"""
-    if p := await pending(s, chamber):
+    p = await pending(s, chamber)
+    if p:
         raise conflict("PENDING_EXISTS", f"腔室 {chamber} 已有待审核修订 {p.revision}")
     a = await active(s, chamber)
     if a and a.spec == spec:
@@ -288,12 +289,14 @@ async def get_revisions(chamber: str, revision: int | None = None):
 async def export(**filters) -> dict:
     """导出生效修订，格式可以直接再导入。"""
     items = await list_bindings(**filters)
+    actives = [x["active"] for x in items]
     return {
         "format": EXPORT_FORMAT,
         "exported_at": now().isoformat(),
         "bindings": [
             {"tool": a.tool, "chamber": a.chamber, "revision": a.revision, "rules": a.spec["rules"]}
-            for x in items if (a := x["active"]) and a.spec["rules"]
+            for a in actives
+            if a and a.spec["rules"]
         ],
     }
 
@@ -365,7 +368,8 @@ async def remove_feature(s, feature_id: str, version: str) -> list[dict]:
                 del rule["features"][feature_id]
         spec["rules"] = [r for r in spec["rules"] if r["features"]]
 
-        if p := await pending(s, a.chamber):  # 该腔室的其他待审核修订基于旧内容，也一并撤回
+        p = await pending(s, a.chamber)
+        if p:  # 该腔室的其他待审核修订基于旧内容，也一并撤回
             p.status, p.review_note = "withdrawn", f"特征 {feature_id}@{version} 下线，自动撤回，请基于新修订重新提交"
         a.status, a.superseded_at = "superseded", now()
         await s.flush()

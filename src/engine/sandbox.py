@@ -96,8 +96,9 @@ def _summary(data) -> dict:
     return out
 
 
-def _execute(pkg_dir: str, key: str, run_id: str, gde_json: str, fetch_s: float, compute_s: float) -> dict:
-    """子进程入口：返回 RunResult 的字段；GDE 不可用时返回 {"unavailable": 说明}。"""
+def _execute(pkg_dir: str, key: str, run_id: str, gde_json: str, timeouts: tuple[float, float]) -> dict:
+    """子进程入口：返回 RunResult 的字段；GDE 不可用时返回 {"unavailable": 说明}。timeouts 为 (fetch 秒, compute 秒)。"""
+    fetch_s, compute_s = timeouts
     from src.eifeature import REASON, Skip
     from src.eifeature import gde as eif_gde
 
@@ -163,7 +164,7 @@ class Sandbox:
         key = f"eif_pkg_{feature_id}_{version.replace('.', '_')}_{package_hash[:12]}"
         future = self.pool.schedule(
             _execute,
-            args=(str(pkg_dir), key, run_id, self.gde_json, FETCH_TIMEOUT_S, COMPUTE_TIMEOUT_S),
+            args=(str(pkg_dir), key, run_id, self.gde_json, (FETCH_TIMEOUT_S, COMPUTE_TIMEOUT_S)),
             timeout=FETCH_TIMEOUT_S + COMPUTE_TIMEOUT_S + 10,
         )
         try:
