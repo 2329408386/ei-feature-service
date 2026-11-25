@@ -254,18 +254,7 @@ async def list_bindings(tool=None, chamber=None, recipe=None, feature=None, stat
     async with db.session() as s:
         stmt = select(ChamberBinding).where(*cond).order_by(ChamberBinding.tool, ChamberBinding.chamber)
         rows = (await s.execute(stmt)).scalars().all()
-        matched = None
-        if recipe or feature:
-            q = select(BindingItem.chamber).join(
-                ChamberBinding,
-                (ChamberBinding.chamber == BindingItem.chamber) & (ChamberBinding.revision == BindingItem.revision),
-            ).where(ChamberBinding.status == "active")
-            if recipe:
-                q = q.where(BindingItem.recipe == recipe)
-            if feature:
-                fid, _, ver = feature.partition("@")
-                q = q.where(BindingItem.feature_id == fid, *([BindingItem.version == ver] if ver else []))
-            matched = set((await s.execute(q)).scalars().all())
+        matched = await _matched_chambers(s, recipe, feature) if recipe or feature else None
 
     out: dict[str, dict] = {}
     for r in rows:
@@ -275,6 +264,20 @@ async def list_bindings(tool=None, chamber=None, recipe=None, feature=None, stat
         x for x in out.values()
         if (status is None or x[status] is not None) and (matched is None or x["chamber"] in matched)
     ]
+
+
+async def _matched_chambers(s, recipe: str | None, feature: str | None) -> set[str]:
+    """生效修订的 binding_item 中含指定配方 / 特征（id 或 id@version）的腔室。"""
+    q = select(BindingItem.chamber).join(
+        ChamberBinding,
+        (ChamberBinding.chamber == BindingItem.chamber) & (ChamberBinding.revision == BindingItem.revision),
+    ).where(ChamberBinding.status == "active")
+    if recipe:
+        q = q.where(BindingItem.recipe == recipe)
+    if feature:
+        fid, _, ver = feature.partition("@")
+        q = q.where(BindingItem.feature_id == fid, *([BindingItem.version == ver] if ver else []))
+    return set((await s.execute(q)).scalars().all())
 
 
 async def get_revisions(chamber: str, revision: int | None = None):
@@ -307,42 +310,47 @@ async def import_bindings(bindings: list[dict], dry_run: bool, user: str) -> lis
     results, seen = [], set()
     async with db.session() as s:
         for raw in bindings:
-            tool, chamber = raw.get("tool"), raw.get("chamber")
-            res = {"tool": tool, "chamber": chamber, "action": "error", "message": ""}
-            results.append(res)
-            try:
-                spec = BindingSpec.model_validate(raw)
-            except ValidationError as e:
-                res["message"], res["errors"] = "格式错误", error_list(e)
-                continue
-            if chamber in seen:
-                res["message"] = "文件中重复出现"
-                continue
-            seen.add(chamber)
-
-            await db.lock(s, f"binding:{chamber}")
-            normalized, errors = await validate(s, spec)
-            if errors:
-                res["message"], res["errors"] = "校验失败", errors
-                continue
-            try:
-                await _check_state(s, chamber, normalized)
-            except AppError as e:
-                res["action"] = "conflict" if e.code == "PENDING_EXISTS" else "skip"
-                res["message"] = e.message
-                continue
-
-            a = await active(s, chamber)
-            res["action"], res["message"] = "new", "生成待审核修订"
-            if raw.get("revision") and a and raw["revision"] != a.revision:
-                res["message"] += f"（文件基于修订 {raw['revision']}，当前生效修订 {a.revision}）"
-            if not dry_run:
-                row = await _insert(
-                    s, normalized, status="pending", source="import", user=user,
-                    base_revision=a.revision if a else None,
-                )
-                res["revision"] = row.revision
+            results.append(await _import_one(s, raw, seen, dry_run, user))
     return results
+
+
+async def _import_one(s, raw: dict, seen: set, dry_run: bool, user: str) -> dict:
+    """在调用方的事务里处理导入文件中的一个腔室，返回该腔室的结果项；seen 记录已出现的腔室。"""
+    chamber = raw.get("chamber")
+    res = {"tool": raw.get("tool"), "chamber": chamber, "action": "error", "message": ""}
+    try:
+        spec = BindingSpec.model_validate(raw)
+    except ValidationError as e:
+        res["message"], res["errors"] = "格式错误", error_list(e)
+        return res
+    if chamber in seen:
+        res["message"] = "文件中重复出现"
+        return res
+    seen.add(chamber)
+
+    await db.lock(s, f"binding:{chamber}")
+    normalized, errors = await validate(s, spec)
+    if errors:
+        res["message"], res["errors"] = "校验失败", errors
+        return res
+    try:
+        await _check_state(s, chamber, normalized)
+    except AppError as e:
+        res["action"] = "conflict" if e.code == "PENDING_EXISTS" else "skip"
+        res["message"] = e.message
+        return res
+
+    a = await active(s, chamber)
+    res["action"], res["message"] = "new", "生成待审核修订"
+    if raw.get("revision") and a and raw["revision"] != a.revision:
+        res["message"] += f"（文件基于修订 {raw['revision']}，当前生效修订 {a.revision}）"
+    if not dry_run:
+        row = await _insert(
+            s, normalized, status="pending", source="import", user=user,
+            base_revision=a.revision if a else None,
+        )
+        res["revision"] = row.revision
+    return res
 
 
 # ---------------------------------------------------------------- 特征下线

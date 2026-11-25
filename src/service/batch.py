@@ -35,8 +35,8 @@ async def create(body: BatchIn, user: str) -> FeatureBatch:
             raise invalid("VALIDATION_ERROR", "参数错误", errors)
         data_from, data_to = day_range(start, end)
         row = FeatureBatch(
-            mode=body.mode, status="queued", chamber=chamber, binding_revision=a.revision, features=sorted(set(features)),
-            data_from=data_from, data_to=data_to, reason=body.reason, created_by=user,
+            mode=body.mode, status="queued", chamber=chamber, binding_revision=a.revision,
+            features=sorted(set(features)), data_from=data_from, data_to=data_to, reason=body.reason, created_by=user,
         )
         s.add(row)
     return row

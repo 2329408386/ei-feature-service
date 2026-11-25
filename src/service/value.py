@@ -20,18 +20,28 @@ async def query(feature: str, *, tool=None, chamber=None, recipe=None, wafer=Non
     fid, _, ver = feature.partition("@")
     if not ver:
         raise invalid("VALIDATION_ERROR", "feature 必须形如 id@version")
+    filters = {"tool": tool, "chamber": chamber, "recipe": recipe, "wafer": wafer, "lot": lot}
+    cond = _conditions(fid, ver, filters, start, end, only_null)
+    return await _page(fid, ver, cond, page, size)
+
+
+def _conditions(fid: str, ver: str, filters: dict, start: date | None, end: date | None, only_null: bool) -> list:
+    """组装特征值查询的 WHERE 条件；filters 中值为空的列不参与过滤。"""
     v = FeatureValue
     cond = [v.feature_id == fid, v.version == ver]
-    for col, val in ((v.tool, tool), (v.chamber, chamber), (v.recipe, recipe), (v.wafer, wafer), (v.lot, lot)):
-        if val:
-            cond.append(col == val)
+    cond.extend(getattr(v, col) == val for col, val in filters.items() if val)
     if start:
         cond.append(v.run_end_at >= day_range(start, start)[0])
     if end:
         cond.append(v.run_end_at < day_range(end, end)[1])
     if only_null:
         cond.append(v.value.is_(None))
+    return cond
 
+
+async def _page(fid: str, ver: str, cond: list, page: int, size: int) -> tuple[list[dict], int]:
+    """按条件分页取值，并附上由 feature.status 实时得出的 retired 标记。"""
+    v = FeatureValue
     async with db.session() as s:
         total = await s.scalar(select(func.count()).select_from(v).where(*cond))
         is_retired = select(Feature.status == "retired").where(Feature.feature_id == fid, Feature.version == ver)

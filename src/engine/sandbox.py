@@ -96,58 +96,74 @@ def _summary(data) -> dict:
     return out
 
 
-def _execute(pkg_dir: str, key: str, run_id: str, gde_json: str, timeouts: tuple[float, float]) -> dict:
-    """子进程入口：返回 RunResult 的字段；GDE 不可用时返回 {"unavailable": 说明}。timeouts 为 (fetch 秒, compute 秒)。"""
-    fetch_s, compute_s = timeouts
-    from src.eifeature import REASON, Skip
+def _skip(r: RunResult, e, fallback: str) -> None:
+    """记录 Skip 的原因码；原因码不合规时当作错误处理（记为 fallback）。"""
+    from src.eifeature import REASON
+
+    r.reason = e.reason if REASON.match(str(e.reason)) else fallback
+    r.reason_detail = None if r.reason == e.reason else f"非法原因码：{e.reason!r}"
+
+
+def _fetch(r: RunResult, module, run_id: str, gde_json: str, seconds: float):
+    """fetch 阶段：可以调用 gde 取数。返回取到的数据；失败时写 r.reason，GDE 不可用时抛 GdeUnavailable。"""
+    from src.eifeature import Skip
     from src.eifeature import gde as eif_gde
 
-    r = RunResult()
-    module = _load(pkg_dir, key)
-
-    def skip(e: Skip, fallback: str) -> None:  # 原因码不合规时当作错误处理
-        r.reason = e.reason if REASON.match(str(e.reason)) else fallback
-        r.reason_detail = None if r.reason == e.reason else f"非法原因码：{e.reason!r}"
-
-    # ---- fetch：可以调用 gde 取数
     t0 = time.perf_counter()
-    eif_gde.bind(_child_gde(gde_json), fetch_s)
+    eif_gde.bind(_child_gde(gde_json), seconds)
     try:
-        with _alarm(fetch_s):
-            data = module.fetch(run_id)
+        with _alarm(seconds):
+            return module.fetch(run_id)
     except Skip as e:
-        skip(e, "FETCH_ERROR")
+        _skip(r, e, "FETCH_ERROR")
     except _Timeout:
         r.reason = "FETCH_TIMEOUT"
     except GdeNotFound as e:
         r.reason, r.reason_detail = "MISSING_DATA", _detail(e)
-    except GdeUnavailable as e:
-        return {"unavailable": str(e)}
+    except GdeUnavailable:
+        raise
     except Exception as e:
         r.reason, r.reason_detail = "FETCH_ERROR", _detail(e)
     finally:
         eif_gde.bind(None)
         r.fetch_ms = int((time.perf_counter() - t0) * 1000)
-    if r.reason:
-        return r.__dict__
+    return None
 
-    # ---- compute：纯计算，调用 gde 会报错
-    r.data_summary = _summary(data)
+
+def _compute(r: RunResult, module, data, seconds: float) -> None:
+    """compute 阶段：纯计算，调用 gde 会报错。结果写入 r.value，失败时写 r.reason。"""
+    from src.eifeature import Skip
+
     t0 = time.perf_counter()
     try:
-        with _alarm(compute_s):
+        with _alarm(seconds):
             value = module.compute(data)
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
             r.reason, r.reason_detail = "COMPUTE_ERROR", f"compute 返回了非有限数值：{value!r}"[:DETAIL_MAX]
         else:
             r.value = float(value)
     except Skip as e:
-        skip(e, "COMPUTE_ERROR")
+        _skip(r, e, "COMPUTE_ERROR")
     except _Timeout:
-        r.reason, r.reason_detail = "COMPUTE_ERROR", f"compute 超过 {compute_s} 秒"
+        r.reason, r.reason_detail = "COMPUTE_ERROR", f"compute 超过 {seconds} 秒"
     except Exception as e:
         r.reason, r.reason_detail = "COMPUTE_ERROR", _detail(e)
     r.compute_ms = int((time.perf_counter() - t0) * 1000)
+
+
+def _execute(pkg_dir: str, key: str, run_id: str, gde_json: str, timeouts: tuple[float, float]) -> dict:
+    """子进程入口：返回 RunResult 的字段；GDE 不可用时返回 {"unavailable": 说明}。timeouts 为 (fetch 秒, compute 秒)。"""
+    fetch_s, compute_s = timeouts
+    r = RunResult()
+    module = _load(pkg_dir, key)
+    try:
+        data = _fetch(r, module, run_id, gde_json, fetch_s)
+    except GdeUnavailable as e:
+        return {"unavailable": str(e)}
+    if r.reason:
+        return r.__dict__
+    r.data_summary = _summary(data)
+    _compute(r, module, data, compute_s)
     return r.__dict__
 
 
