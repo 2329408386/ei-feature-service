@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """第 1 版：特征 + 算子 + 按算子绑定 recipe 的全部表结构（迁移工具接入前的最终结构）。
 
 修订号：0001
@@ -7,10 +10,13 @@
 
 from alembic import op
 
+# 以下四个名称由 Alembic 按固定的小写名读取，不能改成大写
+# pylint: disable=invalid-name
 revision = "0001"
 down_revision = None
 branch_labels = None
 depends_on = None
+# pylint: enable=invalid-name
 
 UPGRADE_SQL = r"""
 -- 特征：每个 (feature_id, version) 一行，只有元数据（feature.json），计算代码在算子里。
@@ -187,8 +193,10 @@ DROP SEQUENCE feature_id_seq;
 
 
 def upgrade() -> None:
+    """建全部表、索引和序列。"""
     op.get_bind().exec_driver_sql(UPGRADE_SQL)  # 原样执行，避免 SQL 注释里的冒号被当成绑定参数
 
 
 def downgrade() -> None:
+    """删除全部表和序列（数据一并删除）。"""
     op.get_bind().exec_driver_sql(DOWNGRADE_SQL)

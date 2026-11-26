@@ -856,7 +856,7 @@ body.present .page { font-size: 1.06rem; }
 │   │   └── writer.py      <span class="c"># 写 feature_value、维护批次计数</span>
 │   ├── model/
 │   │   ├── tables.py      <span class="c"># SQLAlchemy ORM，七张表</span>
-│   │   └── migrations/    <span class="c"># Alembic：env.py + versions/0001_baseline.py …（每次改表一个迁移）</span>
+│   │   └── migrations/    <span class="c"># Alembic：env.py + versions/v0001_baseline.py …（每次改表一个迁移）</span>
 │   ├── eifeature/         <span class="c"># 算子运行库：gde、ops、Series、Skip（第 7 节）</span>
 │   └── util/              <span class="c"># 与业务无关、可复用的部分</span>
 │       ├── config.py      <span class="c"># 读 config.json，以及第 3 节的代码常量</span>
@@ -1289,7 +1289,7 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
   <p class="muted">试跑在处理请求的同一进程内执行：同一个 <code>sandbox.run</code>，受 <code>TRIAL_CONCURRENCY</code> 信号量限制，超时与原因码规则相同，结果直接返回不写库。</p>
 
   <h3>10. 数据库</h3>
-  <p class="muted">表结构用 Alembic 管理版本，迁移文件在 <code>src/model/migrations/versions/</code>，按 <code>0001</code>、<code>0002</code> … 顺序编号；第 1 版（<code>0001_baseline</code>）的完整 SQL 见“结果 · 设计说明”弹窗（两者逐字一致）。服务启动时自动执行 <code>alembic upgrade head</code>（<code>env.py</code> 内持有 advisory lock，多实例同时启动只有一个在迁移）；降级只手动执行 <code>uv run alembic downgrade -1</code>（或指定版本 / <code>base</code>）。以后改表：<code>uv run alembic revision -m "说明" --rev-id 000N</code> 新建迁移，<code>upgrade()</code> 和 <code>downgrade()</code> 都用原生 SQL 写全，同步修改 <code>tables.py</code>；已合入的迁移文件不再修改。接入 Alembic 之前建的库（有业务表、没有 <code>alembic_version</code>）首次运行时自动记为 <code>0001</code>，不执行建表；更早的“特征包 + 按腔室绑定”“recipe × 腔室绑定”旧库不兼容，需先清空。几个关键约束：</p>
+  <p class="muted">表结构用 Alembic 管理版本，迁移文件在 <code>src/model/migrations/versions/</code>，按 <code>0001</code>、<code>0002</code> … 顺序编号；第 1 版（<code>v0001_baseline.py</code>，修订号 <code>0001</code>）的完整 SQL 见“结果 · 设计说明”弹窗（两者逐字一致）。服务启动时自动执行 <code>alembic upgrade head</code>（<code>env.py</code> 内持有 advisory lock，多实例同时启动只有一个在迁移）；降级只手动执行 <code>uv run alembic downgrade -1</code>（或指定版本 / <code>base</code>）。以后改表：<code>uv run alembic revision -m "说明" --rev-id 000N</code> 新建迁移，<code>upgrade()</code> 和 <code>downgrade()</code> 都用原生 SQL 写全，同步修改 <code>tables.py</code>；已合入的迁移文件不再修改。接入 Alembic 之前建的库（有业务表、没有 <code>alembic_version</code>）首次运行时自动记为 <code>0001</code>，不执行建表；更早的“特征包 + 按腔室绑定”“recipe × 腔室绑定”旧库不兼容，需先清空。几个关键约束：</p>
   <ul>
     <li><code>feature_one_published</code>：同一 feature_id 最多一个 published 版本。</li>
     <li><code>operator_code_file</code>：同一 feature_id 内代码文件名唯一。</li>
@@ -1929,7 +1929,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   </table>
   </div>
 
-  <div class="file">第 1 版表结构（与 src/model/migrations/versions/0001_baseline.py 一致）</div>
+  <div class="file">第 1 版表结构（与 src/model/migrations/versions/v0001_baseline.py 一致）</div>
 <pre><code><span class="c">-- 特征：每个 (feature_id, version) 一行，只有元数据（feature.json），计算代码在算子里。</span>
 <span class="c">-- 同一 feature_id 同时最多一个 published 版本：新版本评审通过时旧的已发布版本自动下线。</span>
 <span class="k">CREATE TABLE</span> feature (

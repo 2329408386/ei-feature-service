@@ -12,7 +12,7 @@ import asyncio
 
 from sqlalchemy import delete, func, or_, select, text
 
-from src.api.schemas import ReviewIn
+from src.api.schemas import FeatureQuery, ReviewIn
 from src.model.tables import Feature, FeatureMeta, Operator
 from src.service import meta, operator, subscription
 from src.service import review as flow
@@ -35,7 +35,8 @@ async def _get(s, feature_id: str, version: str, lock: bool = False) -> Feature:
 async def _new_feature_id(s) -> str:
     """后台生成特征 ID：feat_0001、feat_0002 …（序列取号，跳过已被占用的）。"""
     while True:
-        fid = f"feat_{await s.scalar(text("SELECT nextval('feature_id_seq')")):04d}"
+        seq = await s.scalar(text("SELECT nextval('feature_id_seq')"))
+        fid = f"feat_{seq:04d}"
         if await s.scalar(select(Feature.feature_id).where(Feature.feature_id == fid).limit(1)) is None:
             return fid
 
@@ -74,9 +75,10 @@ async def create(spec: dict, user: str) -> Feature:
     return row
 
 
-async def list_features(status: str | None, q: str | None, feature_id: str | None, tool: str | None,
-                        page: int, size: int):
+async def list_features(query: FeatureQuery):
     """分页查询，q 匹配特征 ID、显示名称或描述，tool 按关联机台过滤；按特征 ID、版本号降序。返回 (rows, total)。"""
+    status, q, feature_id, tool = query.status, query.q, query.feature_id, query.tool
+    page, size = query.page, query.page_size
     cond = []
     if status:
         cond.append(Feature.status == status)
@@ -164,6 +166,20 @@ async def retire(feature_id: str, version: str, reason: str, user: str) -> tuple
     return row, refs, affected
 
 
+async def _restore_operators(s, feature_id: str, version: str, user: str) -> list[str]:
+    """把随特征 feature_id@version 下线而下线的算子重新上线，返回它们的引用。"""
+    prefix = f"特征 {feature_id}@{version} 下线"
+    ops = (await s.execute(select(Operator).where(
+        Operator.feature_id == feature_id, Operator.status == "retired"
+    ).order_by(Operator.name, Operator.version).with_for_update())).scalars().all()
+    restored = []
+    for op in ops:
+        if (op.retire_reason or "").startswith(prefix):
+            flow.restore(op, user, f"随特征 {feature_id}@{version} 重新上线")
+            restored.append(op.ref)
+    return restored
+
+
 async def restore(feature_id: str, version: str, comment: str | None, with_operators: bool,
                   user: str) -> tuple[Feature, list[str]]:
     """已下线的特征版本重新上线（不再评审）。同一特征同时只能有一个已发布版本。
@@ -180,16 +196,7 @@ async def restore(feature_id: str, version: str, comment: str | None, with_opera
             if pub:
                 raise invalid_state(f"{feature_id}@{pub} 已发布，同一特征只能有一个已发布版本；请先下线它", "published")
         flow.restore(row, user, comment)
-        restored = []
-        if with_operators:
-            prefix = f"特征 {feature_id}@{version} 下线"
-            ops = (await s.execute(select(Operator).where(
-                Operator.feature_id == feature_id, Operator.status == "retired"
-            ).order_by(Operator.name, Operator.version).with_for_update())).scalars().all()
-            for op in ops:
-                if (op.retire_reason or "").startswith(prefix):
-                    flow.restore(op, user, f"随特征 {feature_id}@{version} 重新上线")
-                    restored.append(op.ref)
+        restored = await _restore_operators(s, feature_id, version, user) if with_operators else []
         await s.flush()
         await meta.attach_features(s, [row])
     return row, restored

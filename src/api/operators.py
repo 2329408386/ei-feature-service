@@ -14,12 +14,12 @@ from src.api.schemas import (
     OperatorMetaIn,
     OperatorMetaOut,
     OperatorOut,
+    OperatorQuery,
     OperatorRetireOut,
     Page,
     RestoreIn,
     RetireIn,
     ReviewIn,
-    Status,
     TrialIn,
     TrialOut,
 )
@@ -38,17 +38,10 @@ async def create(body: OperatorIn, user: User):
 
 
 @router.get("", response_model=Page[OperatorOut])
-async def list_operators(
-    feature_id: str | None = None,
-    name: str | None = None,
-    status: Status | None = None,
-    q: str | None = None,
-    page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=200)] = 20,
-):
+async def list_operators(query: Annotated[OperatorQuery, Query()]):
     """分页查询算子，可按特征、算子名、状态、关键字过滤。"""
-    rows, total = await svc.list_operators(feature_id, name, status, q, page, page_size)
-    return {"items": rows, "total": total, "page": page, "page_size": page_size}
+    rows, total = await svc.list_operators(query)
+    return {"items": rows, "total": total, "page": query.page, "page_size": query.page_size}
 
 
 @router.patch("/{feature_id}/{name}", response_model=OperatorMetaOut)
@@ -67,6 +60,7 @@ async def get_operator(feature_id: str, name: str, version: int):
 @router.delete(PATH, response_model=DeleteImpact, responses={204: {"description": "已删除"}})
 async def delete_operator(feature_id: str, name: str, version: int, user: User, dry_run: bool = False):
     """删除算子版本：自己的草稿或已下线的；连同特征值、文件删除，最后一个版本时连同绑定修订和名称，不可恢复。
+
     dry_run=true 只返回影响范围（200），用于弹窗警告。"""
     out = await svc.remove(feature_id, name, version, user, dry_run)
     return out if dry_run else Response(status_code=204)

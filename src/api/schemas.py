@@ -24,6 +24,31 @@ class Page(BaseModel, Generic[T]):
     page_size: int
 
 
+class _PageQuery(BaseModel):
+    """分页查询参数（query string）。"""
+
+    page: int = Field(1, ge=1)
+    page_size: int = Field(20, ge=1, le=200)
+
+
+class FeatureQuery(_PageQuery):
+    """GET /api/features 的查询参数。"""
+
+    status: Status | None = None
+    q: str | None = None
+    feature_id: str | None = None
+    tool: str | None = None
+
+
+class OperatorQuery(_PageQuery):
+    """GET /api/operators 的查询参数。"""
+
+    feature_id: str | None = None
+    name: str | None = None
+    status: Status | None = None
+    q: str | None = None
+
+
 # ---------------------------------------------------------------- 特征与算子共用
 class ReviewEntry(BaseModel):
     decision: Literal["approve", "reject", "restore"]  # restore：重新上线（reviewer 为操作人）

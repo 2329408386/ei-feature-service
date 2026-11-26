@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """${message}
 
 修订号：${up_revision}
@@ -7,10 +10,13 @@
 
 from alembic import op
 
+# 以下四个名称由 Alembic 按固定的小写名读取，不能改成大写
+# pylint: disable=invalid-name
 revision = ${repr(up_revision)}
 down_revision = ${repr(down_revision)}
 branch_labels = ${repr(branch_labels)}
 depends_on = ${repr(depends_on)}
+# pylint: enable=invalid-name
 
 
 def upgrade() -> None:

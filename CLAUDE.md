@@ -22,7 +22,7 @@ uv run pytest test/integration/test_migrations.py -q     # 迁移往返测试（
 
 ## 数据库迁移（Alembic）
 
-表结构由 `src/model/migrations/versions/` 下按顺序编号的迁移文件定义，`0001_baseline` 是第 1 版。服务启动时自动升级到最新，降级只手动执行。
+表结构由 `src/model/migrations/versions/` 下按顺序编号的迁移文件定义，`v0001_baseline.py` 是第 1 版（文件名加 `v` 前缀以符合模块命名规范，修订号仍是 `0001`）。服务启动时自动升级到最新，降级只手动执行。
 
 ```bash
 uv run alembic current                              # 当前版本
@@ -30,7 +30,7 @@ uv run alembic history                              # 全部版本
 uv run alembic upgrade head                         # 升到最新（启动时也会自动执行）
 uv run alembic downgrade -1                         # 降一个版本；也可 downgrade 0001 / base（base 会删光所有表）
 uv run alembic upgrade head --sql                   # 只输出 SQL，不执行
-uv run alembic revision -m "说明" --rev-id 0002     # 新建迁移
+uv run alembic revision -m "说明" --rev-id 0002     # 新建迁移（生成 v0002_说明.py）
 ```
 
 - 改表 = 新建迁移文件，`upgrade()` / `downgrade()` 都用原生 SQL 写全（多语句或含冒号用 `op.get_bind().exec_driver_sql(sql)`），同步改 `tables.py` 和设计文档；已合入的迁移不再修改。

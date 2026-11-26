@@ -171,7 +171,8 @@ class FakeGdeClient:
         self._lock = threading.Lock()
 
     # ---- 元数据
-    def list_fleets(self):
+    @staticmethod
+    def list_fleets():
         """见 GdeClient.list_fleets。"""
         return sorted(FAKE_FLEETS)
 
@@ -231,7 +232,8 @@ class FakeGdeClient:
         end = min(end, datetime.now(ZONE))  # 还没发生的执行不返回
         runs = [
             self._make_run(f"RUN-{c}-{at:%Y%m%d%H%M}", c, at)
-            for c in names for at in _run_times(start, end)
+            for c in names
+            for at in _run_times(start, end)
         ]
         return sorted((r for r in runs if r.recipe == recipe), key=lambda r: (r.end_at, r.chamber))
 

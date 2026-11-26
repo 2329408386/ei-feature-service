@@ -69,9 +69,8 @@ async def attach_features(s, rows: list[Feature], tools: dict[str, list[str]] | 
     """把显示名称（feature_meta）和关联机台填到 Feature 对象上（display_name / tools）。"""
     ids = {r.feature_id for r in rows}
     if ids:
-        names = {m.feature_id: m.name for m in (await s.execute(
-            select(FeatureMeta).where(FeatureMeta.feature_id.in_(ids))
-        )).scalars().all()}
+        result = await s.execute(select(FeatureMeta).where(FeatureMeta.feature_id.in_(ids)))
+        names = {m.feature_id: m.name for m in result.scalars().all()}
         if tools is None:
             tools = await feature_tools(s, ids)
         for r in rows:
@@ -84,9 +83,10 @@ async def attach_operators(s, rows: list[Operator]) -> list[Operator]:
     """把 operator_meta 的名称填到 Operator 对象上（display_name）。"""
     keys = {(r.feature_id, r.name) for r in rows}
     if keys:
-        names = {(m.feature_id, m.operator): m.name for m in (await s.execute(
+        result = await s.execute(
             select(OperatorMeta).where(tuple_(OperatorMeta.feature_id, OperatorMeta.operator).in_(keys))
-        )).scalars().all()}
+        )
+        names = {(m.feature_id, m.operator): m.name for m in result.scalars().all()}
         for r in rows:
             r.display_name = names.get((r.feature_id, r.name))
     return rows
@@ -97,7 +97,9 @@ async def upsert_feature_name(s, feature_id: str, name: str | None, user: str) -
     name = _clean(name)
     await s.execute(
         insert(FeatureMeta).values(feature_id=feature_id, name=name, updated_by=user)
-        .on_conflict_do_update(index_elements=["feature_id"], set_={"name": name, "updated_by": user, "updated_at": now()})
+        .on_conflict_do_update(
+            index_elements=["feature_id"], set_={"name": name, "updated_by": user, "updated_at": now()}
+        )
     )
 
 

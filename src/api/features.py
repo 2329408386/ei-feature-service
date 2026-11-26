@@ -14,13 +14,13 @@ from src.api.schemas import (
     FeatureMetaIn,
     FeatureMetaOut,
     FeatureOut,
+    FeatureQuery,
     FeatureRetireOut,
     OperatorOut,
     Page,
     RestoreIn,
     RetireIn,
     ReviewIn,
-    Status,
 )
 from src.service import feature as svc
 from src.service import meta
@@ -37,17 +37,10 @@ async def create(user: User, spec: Annotated[dict, Body(description="feature.jso
 
 
 @router.get("", response_model=Page[FeatureOut])
-async def list_features(
-    status: Status | None = None,
-    q: str | None = None,
-    feature_id: str | None = None,
-    tool: str | None = None,
-    page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=200)] = 20,
-):
+async def list_features(query: Annotated[FeatureQuery, Query()]):
     """分页查询特征，可按状态、关键字（ID / 名称 / 描述）、特征 ID、关联机台过滤。"""
-    rows, total = await svc.list_features(status, q, feature_id, tool, page, page_size)
-    return {"items": rows, "total": total, "page": page, "page_size": page_size}
+    rows, total = await svc.list_features(query)
+    return {"items": rows, "total": total, "page": query.page, "page_size": query.page_size}
 
 
 @router.get("/tools", response_model=list[str])
@@ -66,12 +59,14 @@ async def update_meta(feature_id: str, body: FeatureMetaIn, user: User):
 async def get_feature(feature_id: str, version: str):
     """特征详情，附带该特征下的全部算子。"""
     row, ops = await svc.get_feature(feature_id, version)
-    return {**FeatureOut.model_validate(row).model_dump(), "operators": [OperatorOut.model_validate(o) for o in ops]}
+    operators = [OperatorOut.model_validate(op) for op in ops]
+    return {**FeatureOut.model_validate(row).model_dump(), "operators": operators}
 
 
 @router.delete(PATH, response_model=DeleteImpact, responses={204: {"description": "已删除"}})
 async def delete_feature(feature_id: str, version: str, user: User, dry_run: bool = False):
     """删除特征版本：自己的草稿或已下线的。最后一个版本时连同全部算子、特征值、绑定修订一起删除，不可恢复。
+
     dry_run=true 只返回影响范围（200），用于弹窗警告。"""
     out = await svc.remove(feature_id, version, user, dry_run)
     return out if dry_run else Response(status_code=204)

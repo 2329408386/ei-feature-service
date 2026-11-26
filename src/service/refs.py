@@ -3,14 +3,14 @@
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """算子引用：字符串 feature_id/operator@version，如 gas_flow_diffmean/diffmean@2。"""
 
+__all__ = ["REF", "op_ref", "parse_ref", "require_ref"]
+
 import re
 
 from src.model.tables import op_ref
 from src.util.errors import invalid
 
 REF = re.compile(r"^([a-z][a-z0-9_]{2,63})/([a-z][a-z0-9_]{2,63})@([1-9][0-9]{0,8})$")
-
-__all__ = ["REF", "op_ref", "parse_ref", "require_ref"]
 
 
 def parse_ref(ref: str) -> tuple[str, str, int] | None:

@@ -18,7 +18,7 @@ import asyncio
 from pydantic import ValidationError
 from sqlalchemy import func, select
 
-from src.api.schemas import EXPORT_FORMAT, BindingSpec
+from src.api.schemas import EXPORT_FORMAT, BindingSpec, BindingSubmitIn, RevisionReviewIn
 from src.model.tables import BindingItem, Operator, OperatorBinding
 from src.service import subscription
 from src.util import db
@@ -163,9 +163,8 @@ async def _insert(s, spec: dict, *, status: str, source: str, user: str, base_re
 
 
 # ---------------------------------------------------------------- 提交、审核、撤回
-async def submit(feature_id: str, operator: str, body: BindingSpec, base_revision: int | None, user: str,
-                 source: str) -> OperatorBinding:
-    """校验并生成待审核修订。同一算子同时只能有一个待审核修订。"""
+async def submit(feature_id: str, operator: str, body: BindingSubmitIn, user: str, source: str) -> OperatorBinding:
+    """校验并生成待审核修订。同一算子同时只能有一个待审核修订；body.base_revision 用于检测并发修改。"""
     if (body.feature_id, body.operator) != (feature_id, operator):
         raise invalid("BINDING_INVALID", "绑定校验失败",
                       [{"path": "operator", "message": "与路径中的 feature_id / operator 不一致"}])
@@ -175,7 +174,7 @@ async def submit(feature_id: str, operator: str, body: BindingSpec, base_revisio
         if errors:
             raise invalid("BINDING_INVALID", "绑定校验失败", errors)
         await _check_state(s, feature_id, operator, spec)
-        return await _insert(s, spec, status="pending", source=source, user=user, base_revision=base_revision)
+        return await _insert(s, spec, status="pending", source=source, user=user, base_revision=body.base_revision)
 
 
 async def _get_revision(s, feature_id: str, operator: str, revision: int) -> OperatorBinding:
@@ -189,10 +188,10 @@ async def _get_revision(s, feature_id: str, operator: str, revision: int) -> Ope
     return row
 
 
-async def review(feature_id: str, operator: str, revision: int, decision: str, comment: str | None,
-                 user: str) -> OperatorBinding:
+async def review(feature_id: str, operator: str, revision: int, body: RevisionReviewIn, user: str) -> OperatorBinding:
     """审核。通过时原生效修订 -> superseded，重算涉及 recipe 的订阅；提交后同步 GDE（失败由后台任务重试）。"""
-    comment = (comment or "").strip() or None
+    decision = body.decision
+    comment = (body.comment or "").strip() or None
     changed: set[str] = set()
     async with db.session() as s:
         await db.lock(s, _lock_key(feature_id, operator))
@@ -249,13 +248,16 @@ async def list_bindings(feature_id=None, operator=None, recipe=None, status=None
         rows = (await s.execute(stmt)).scalars().all()
         matched = None
         if recipe:
-            q = subscription.active_items(BindingItem.feature_id, BindingItem.operator).where(BindingItem.recipe == recipe)
+            q = subscription.active_items(BindingItem.feature_id, BindingItem.operator) \
+                .where(BindingItem.recipe == recipe)
             matched = set((await s.execute(q)).tuples().all())
 
     out: dict[tuple[str, str], dict] = {}
     for r in rows:
         key = (r.feature_id, r.operator)
-        item = out.setdefault(key, {"feature_id": r.feature_id, "operator": r.operator, "active": None, "pending": None})
+        item = out.setdefault(
+            key, {"feature_id": r.feature_id, "operator": r.operator, "active": None, "pending": None}
+        )
         item[r.status] = r
     return [
         x for k, x in out.items()

@@ -13,7 +13,7 @@ import json
 
 from sqlalchemy import delete, func, or_, select, tuple_
 
-from src.api.schemas import OperatorIn, ReviewIn
+from src.api.schemas import OperatorIn, OperatorQuery, ReviewIn
 from src.engine.sandbox import get_sandbox
 from src.model.tables import BindingItem, Feature, FeatureValue, Operator, OperatorBinding, OperatorMeta
 from src.service import binding, meta, subscription
@@ -55,6 +55,23 @@ async def _new_operator_id(s, feature_id: str) -> str:
     return f"op_{n}"
 
 
+async def _check_feature_open(s, feature_id: str) -> None:
+    """新增算子前检查特征：必须存在，且不能所有版本都已下线。"""
+    statuses = await _feature_statuses(s, feature_id)
+    if not statuses:
+        raise not_found(f"特征 {feature_id}")
+    if all(x == "retired" for x in statuses):
+        raise invalid_state(f"特征 {feature_id} 已下线，不能再增加算子", "retired")
+
+
+async def _upload(store, prefix: str, spec: dict, code_file: str, code: str) -> str:
+    """把 operator.json 和代码存入对象存储，返回两者的 hash。"""
+    spec_raw, code_raw = spec_bytes(spec), code.encode("utf-8")
+    await asyncio.to_thread(store.put, prefix + SPEC_FILE, spec_raw)
+    await asyncio.to_thread(store.put, prefix + code_file, code_raw)
+    return code_hash(spec_raw, code_raw)
+
+
 async def create(body: OperatorIn, user: str) -> Operator:
     """校验后把 operator.json 和代码存入对象存储，生成草稿。
 
@@ -71,11 +88,7 @@ async def create(body: OperatorIn, user: str) -> Operator:
     try:
         async with db.session() as s:
             await db.lock(s, f"feature:{fid}")  # 同一特征内的算子 ID、版本号、文件名判断串行
-            statuses = await _feature_statuses(s, fid)
-            if not statuses:
-                raise not_found(f"特征 {fid}")
-            if all(x == "retired" for x in statuses):
-                raise invalid_state(f"特征 {fid} 已下线，不能再增加算子", "retired")
+            await _check_feature_open(s, fid)
             name = spec.pop("id", None) or await _new_operator_id(s, fid)
             spec = {"id": name, **spec}
             last = await s.scalar(select(func.max(Operator.version)).where(
@@ -83,16 +96,14 @@ async def create(body: OperatorIn, user: str) -> Operator:
             if last is None and not (display or "").strip():
                 raise invalid("SPEC_INVALID", "算子校验失败", [name_required(OPERATOR_FILE)])
             ver = (last or 0) + 1
-            spec_raw, code_raw = spec_bytes(spec), body.code.encode("utf-8")
             code_file = body.code_file or f"{name}_v{ver}.py"
             if await s.scalar(select(Operator.name).where(Operator.feature_id == fid, Operator.code_file == code_file)):
                 raise conflict("CODE_FILE_EXISTS", f"特征 {fid} 中已有文件 {code_file}，请换一个文件名")
             prefix = operator_prefix(fid, name, ver)
-            await asyncio.to_thread(store.put, prefix + SPEC_FILE, spec_raw)
-            await asyncio.to_thread(store.put, prefix + code_file, code_raw)
+            digest = await _upload(store, prefix, spec, code_file, body.code)
             row = Operator(
                 feature_id=fid, name=name, version=ver, status="draft", spec=spec, code_file=code_file,
-                code_uri=operator_uri(fid, name, ver), code_hash=code_hash(spec_raw, code_raw),
+                code_uri=operator_uri(fid, name, ver), code_hash=digest,
                 created_by=user, review_log=[],
             )
             s.add(row)
@@ -106,9 +117,10 @@ async def create(body: OperatorIn, user: str) -> Operator:
         raise
 
 
-async def list_operators(feature_id: str | None, name: str | None, status: str | None, q: str | None,
-                         page: int, size: int):
+async def list_operators(query: OperatorQuery):
     """分页查询，q 匹配算子名、显示名称或描述；按特征、算子名、版本降序。返回 (rows, total)。"""
+    feature_id, name, status, q = query.feature_id, query.name, query.status, query.q
+    page, size = query.page, query.page_size
     cond = []
     if feature_id:
         cond.append(Operator.feature_id == feature_id)
@@ -206,7 +218,7 @@ async def impact(s, rows: list[Operator]) -> dict:
         bindings = await s.scalar(select(func.count()).select_from(OperatorBinding).where(
             tuple_(OperatorBinding.feature_id, OperatorBinding.operator).in_(gone)))
     return {"operators": [r.ref for r in rows], "values": values, "bindings": bindings,
-            "removed_operators": [f"{f}/{o}" for f, o in sorted(gone)]}
+            "removed_operators": [f"{fid}/{name}" for fid, name in sorted(gone)]}
 
 
 async def _gone_operators(s, rows: list[Operator]) -> set[tuple[str, str]]:
@@ -221,7 +233,8 @@ async def _gone_operators(s, rows: list[Operator]) -> set[tuple[str, str]]:
 
 
 async def delete_in_tx(s, rows: list[Operator]) -> set[str]:
-    """在调用方事务里删除这些算子版本：特征值、引用它们的绑定明细、算子行；
+    """在调用方事务里删除这些算子版本：特征值、引用它们的绑定明细、算子行。
+
     算子一个版本都不剩时再删它的全部绑定修订和名称。返回涉及的 recipe（调用方提交后同步订阅）。"""
     gone = await _gone_operators(s, rows)
     recipes: set[str] = set()

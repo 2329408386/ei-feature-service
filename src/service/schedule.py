@@ -12,7 +12,15 @@ import asyncio
 
 from sqlalchemy import func, or_, select
 
-from src.model.tables import BindingItem, FeatureBatch, FeatureMeta, FeatureValue, OperatorMeta, RecipeSubscription, op_ref
+from src.model.tables import (
+    BindingItem,
+    FeatureBatch,
+    FeatureMeta,
+    FeatureValue,
+    OperatorMeta,
+    RecipeSubscription,
+    op_ref,
+)
 from src.service.binding import _gde
 from src.service.subscription import active_items
 from src.util import db
@@ -36,6 +44,50 @@ async def _chambers(recipe: str) -> list[tuple[str, str]] | None:
         return None  # GDE 不可用或 recipe 已不存在，不影响列表
 
 
+async def _recipe_operators(s, names: list[str]) -> dict[str, list[str]]:
+    """各 recipe 上生效绑定的算子引用。"""
+    result = await s.execute(
+        active_items(BindingItem.recipe, BindingItem.feature_id, BindingItem.operator, BindingItem.version)
+        .where(BindingItem.recipe.in_(names))
+    )
+    ops: dict[str, list[str]] = {}
+    for rcp, fid, op, ver in result.tuples().all():
+        ops.setdefault(rcp, []).append(op_ref(fid, op, ver))
+    return ops
+
+
+async def _live_progress(s, names: list[str]) -> dict[tuple[str, str], object]:
+    """处理进度：实时批次里各 (recipe, 腔室) 最新的执行结束时间。"""
+    result = await s.execute(
+        select(FeatureValue.recipe, FeatureValue.chamber, func.max(FeatureValue.run_end_at))
+        .join(FeatureBatch, FeatureBatch.batch_id == FeatureValue.batch_id)
+        .where(FeatureBatch.mode == "live", FeatureValue.recipe.in_(names))
+        .group_by(FeatureValue.recipe, FeatureValue.chamber)
+    )
+    return {(rcp, ch): t for rcp, ch, t in result.tuples().all()}
+
+
+def _match_chamber(chambers: list[tuple[str, str]] | None, tool: str | None, chamber: str | None) -> bool:
+    """按机台 / 腔室过滤：都不填时全部保留；GDE 查不到腔室时只在不过滤时保留。"""
+    if not (tool or chamber):
+        return True
+    return any((not tool or t == tool) and (not chamber or c == chamber) for t, c in chambers or [])
+
+
+def _schedule_row(r: RecipeSubscription, status: str, chambers, ops: dict, progress: dict) -> dict:
+    """组装 list_schedules 的一项。"""
+    times = [t for (rcp, _), t in progress.items() if rcp == r.recipe]
+    return {
+        "recipe": r.recipe, "gde_sub_id": r.gde_sub_id, "wanted": r.wanted,
+        "synced": r.wanted == bool(r.gde_sub_id), "last_error": r.last_error, "status": status,
+        "operators": sorted(ops.get(r.recipe, [])),
+        "chambers": None if chambers is None else [
+            {"tool": t, "chamber": c, "progress": progress.get((r.recipe, c))} for t, c in chambers
+        ],
+        "progress": max(times) if times else None,
+    }
+
+
 async def list_schedules(recipe: str | None = None, tool: str | None = None,
                          chamber: str | None = None) -> list[dict]:
     """需要订阅或仍有 GDE 订阅的 recipe。recipe 为模糊匹配；tool / chamber 按 GDE 反查到的机台 / 腔室过滤。"""
@@ -47,41 +99,38 @@ async def list_schedules(recipe: str | None = None, tool: str | None = None,
             select(RecipeSubscription).where(*cond).order_by(RecipeSubscription.recipe)
         )).scalars().all()
         names = [r.recipe for r in rows]
-        ops: dict[str, list[str]] = {}
-        for rcp, fid, op, ver in (await s.execute(
-            active_items(BindingItem.recipe, BindingItem.feature_id, BindingItem.operator, BindingItem.version)
-            .where(BindingItem.recipe.in_(names))
-        )).tuples().all():
-            ops.setdefault(rcp, []).append(op_ref(fid, op, ver))
-        # 处理进度：实时批次里各腔室最新的执行结束时间
-        progress: dict[tuple[str, str], object] = {
-            (rcp, ch): t for rcp, ch, t in (await s.execute(
-                select(FeatureValue.recipe, FeatureValue.chamber, func.max(FeatureValue.run_end_at))
-                .join(FeatureBatch, FeatureBatch.batch_id == FeatureValue.batch_id)
-                .where(FeatureBatch.mode == "live", FeatureValue.recipe.in_(names))
-                .group_by(FeatureValue.recipe, FeatureValue.chamber)
-            )).tuples().all()
-        }
+        ops = await _recipe_operators(s, names)
+        progress = await _live_progress(s, names)
     statuses, chambers = await asyncio.gather(
         asyncio.gather(*(_status(r.gde_sub_id) for r in rows)),
         asyncio.gather(*(_chambers(r.recipe) for r in rows)),
     )
-    out = []
-    for r, st, chs in zip(rows, statuses, chambers):
-        if (tool or chamber) and not any((not tool or t == tool) and (not chamber or c == chamber)
-                                         for t, c in chs or []):
-            continue
-        times = [t for (rcp, _), t in progress.items() if rcp == r.recipe]
-        out.append({
-            "recipe": r.recipe, "gde_sub_id": r.gde_sub_id, "wanted": r.wanted,
-            "synced": r.wanted == bool(r.gde_sub_id), "last_error": r.last_error, "status": st,
-            "operators": sorted(ops.get(r.recipe, [])),
-            "chambers": None if chs is None else [
-                {"tool": t, "chamber": c, "progress": progress.get((r.recipe, c))} for t, c in chs
-            ],
-            "progress": max(times) if times else None,
-        })
-    return out
+    return [
+        _schedule_row(r, st, chs, ops, progress)
+        for r, st, chs in zip(rows, statuses, chambers)
+        if _match_chamber(chs, tool, chamber)
+    ]
+
+
+async def _display_names(s, fids: set[str]) -> tuple[dict[str, str], dict[tuple[str, str], str]]:
+    """特征和算子的显示名称：({feature_id: 名称}, {(feature_id, 算子): 名称})。"""
+    features = await s.execute(
+        select(FeatureMeta.feature_id, FeatureMeta.name).where(FeatureMeta.feature_id.in_(fids)))
+    operators = await s.execute(
+        select(OperatorMeta.feature_id, OperatorMeta.operator, OperatorMeta.name)
+        .where(OperatorMeta.feature_id.in_(fids)))
+    fnames = dict(features.tuples().all())
+    onames = {(fid, op): name for fid, op, name in operators.tuples().all()}
+    return fnames, onames
+
+
+def _tree_operator(fid: str, key: tuple[str, int], rcps: list[str], rows: dict, onames: dict) -> dict:
+    """调度树中的一个算子节点，recipe 节点去掉 operators 字段。"""
+    op, ver = key
+    return {
+        "operator": op, "version": ver, "ref": op_ref(fid, op, ver), "name": onames.get((fid, op)),
+        "recipes": [{k: v for k, v in rows[r].items() if k != "operators"} for r in sorted(rcps)],
+    }
 
 
 async def schedule_tree(feature_id: str | None = None, recipe: str | None = None, tool: str | None = None,
@@ -94,25 +143,17 @@ async def schedule_tree(feature_id: str | None = None, recipe: str | None = None
         q = q.where(BindingItem.feature_id == feature_id)
     async with db.session() as s:
         items = (await s.execute(q)).tuples().all()
-        fids = {i[0] for i in items}
-        fnames = dict((await s.execute(
-            select(FeatureMeta.feature_id, FeatureMeta.name).where(FeatureMeta.feature_id.in_(fids)))).tuples().all())
-        onames = {(f, o): n for f, o, n in (await s.execute(
-            select(OperatorMeta.feature_id, OperatorMeta.operator, OperatorMeta.name)
-            .where(OperatorMeta.feature_id.in_(fids)))).tuples().all()}
+        fnames, onames = await _display_names(s, {i[0] for i in items})
     tree: dict[str, dict[tuple[str, int], list[str]]] = {}
     for fid, op, ver, rcp in items:
         tree.setdefault(fid, {}).setdefault((op, ver), []).append(rcp)
-    out = []
-    for fid in sorted(tree):
-        ops = []
-        for (op, ver), rcps in sorted(tree[fid].items()):
-            ops.append({
-                "operator": op, "version": ver, "ref": op_ref(fid, op, ver), "name": onames.get((fid, op)),
-                "recipes": [{k: v for k, v in rows[r].items() if k != "operators"} for r in sorted(rcps)],
-            })
-        out.append({"feature_id": fid, "name": fnames.get(fid), "operators": ops})
-    return out
+    return [
+        {
+            "feature_id": fid, "name": fnames.get(fid),
+            "operators": [_tree_operator(fid, key, rcps, rows, onames) for key, rcps in sorted(tree[fid].items())],
+        }
+        for fid in sorted(tree)
+    ]
 
 
 async def set_paused(recipe: str, paused: bool) -> None:

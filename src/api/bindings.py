@@ -23,7 +23,7 @@ from src.util.auth import User
 
 router = APIRouter(prefix="/bindings", tags=["算子绑定"])
 OP = "/{feature_id}/{operator}"
-REV = OP + "/revisions/{revision}"
+REV = f"{OP}/revisions/{{revision}}"
 StatusFilter = Literal["active", "pending"]
 
 
@@ -69,13 +69,13 @@ async def submit(feature_id: str, operator: str, body: BindingSubmitIn, user: Us
                  x_client: Annotated[str | None, Header()] = None):
     """提交新修订（待审核）；base_revision 用于检测并发修改。"""
     source = "console" if x_client == "console" else "api"
-    return await svc.submit(feature_id, operator, body, body.base_revision, user, source)
+    return await svc.submit(feature_id, operator, body, user, source)
 
 
 @router.post(f"{REV}/review", response_model=RevisionOut)
 async def review(feature_id: str, operator: str, revision: int, body: RevisionReviewIn, user: User):
     """审核待审核修订：通过后生效，驳回则结束。"""
-    return await svc.review(feature_id, operator, revision, body.decision, body.comment, user)
+    return await svc.review(feature_id, operator, revision, body, user)
 
 
 @router.post(f"{REV}/withdraw", response_model=RevisionOut)

@@ -66,6 +66,7 @@ def check_operator_spec(spec: dict) -> list[dict]:
 
 
 def name_required(file: str) -> dict:
+    """新建特征 / 算子时未填写 name 的错误项。"""
     return _err(file, f"name 必填：新建时要填写名称（1~{NAME_MAX} 字），id 由后台自动生成")
 
 
