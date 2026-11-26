@@ -5,16 +5,19 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Body, Query, Response
 
 from src.api.schemas import (
+    DeleteImpact,
     FeatureDetail,
+    FeatureRestoreOut,
     FeatureMetaIn,
     FeatureMetaOut,
     FeatureOut,
     FeatureRetireOut,
     OperatorOut,
     Page,
+    RestoreIn,
     RetireIn,
     ReviewIn,
     Status,
@@ -29,7 +32,7 @@ PATH = "/{feature_id}/{version}"
 
 @router.post("", status_code=201, response_model=FeatureOut)
 async def create(user: User, spec: Annotated[dict, Body(description="feature.json 内容")]):
-    """新增特征（或特征的新版本），校验通过后生成草稿。"""
+    """新增特征（不填 id，后台生成，name 必填），或带已有 id 提交新版本；校验通过后生成草稿。"""
     return await svc.create(spec, user)
 
 
@@ -66,10 +69,12 @@ async def get_feature(feature_id: str, version: str):
     return {**FeatureOut.model_validate(row).model_dump(), "operators": [OperatorOut.model_validate(o) for o in ops]}
 
 
-@router.delete(PATH, status_code=204)
-async def delete_draft(feature_id: str, version: str, user: User):
-    """删除草稿（只有提交人可以删除）。"""
-    await svc.delete_draft(feature_id, version, user)
+@router.delete(PATH, response_model=DeleteImpact, responses={204: {"description": "已删除"}})
+async def delete_feature(feature_id: str, version: str, user: User, dry_run: bool = False):
+    """删除特征版本：自己的草稿或已下线的。最后一个版本时连同全部算子、特征值、绑定修订一起删除，不可恢复。
+    dry_run=true 只返回影响范围（200），用于弹窗警告。"""
+    out = await svc.remove(feature_id, version, user, dry_run)
+    return out if dry_run else Response(status_code=204)
 
 
 @router.post(f"{PATH}/submit", response_model=FeatureOut)
@@ -82,6 +87,13 @@ async def submit(feature_id: str, version: str, user: User):
 async def review(feature_id: str, version: str, body: ReviewIn, user: User):
     """评审：通过则发布（旧的已发布版本自动下线），驳回则退回草稿。"""
     return await svc.review(feature_id, version, body, user)
+
+
+@router.post(f"{PATH}/restore", response_model=FeatureRestoreOut)
+async def restore(feature_id: str, version: str, body: RestoreIn, user: User):
+    """已下线的特征版本重新上线（不再评审）；可把随它下线的算子一并上线。绑定需重新提交。"""
+    row, refs = await svc.restore(feature_id, version, body.comment, body.operators, user)
+    return {"feature": row, "operators": refs}
 
 
 @router.post(f"{PATH}/retire", response_model=FeatureRetireOut)

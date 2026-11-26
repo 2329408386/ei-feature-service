@@ -26,11 +26,12 @@ class Page(BaseModel, Generic[T]):
 
 # ---------------------------------------------------------------- 特征与算子共用
 class ReviewEntry(BaseModel):
-    decision: Literal["approve", "reject"]
+    decision: Literal["approve", "reject", "restore"]  # restore：重新上线（reviewer 为操作人）
     reviewer: str
     comment: str | None = None
     trial_runs: list[str] = []
     at: datetime
+    retire_reason: str | None = None  # 仅 restore：重新上线前的下线原因
 
 
 class ReviewIn(BaseModel):
@@ -41,6 +42,24 @@ class ReviewIn(BaseModel):
 
 class RetireIn(BaseModel):
     reason: str = Field(min_length=1)
+
+
+class RestoreIn(BaseModel):
+    """重新上线：已下线 -> 已发布，不再评审。"""
+
+    comment: str | None = None
+    operators: bool = True  # 仅特征：随该特征下线的算子是否一并重新上线
+
+
+class DeleteImpact(BaseModel):
+    """删除的影响范围（DELETE ?dry_run=true 返回，供前端弹窗警告；实际删除返回 204）。"""
+
+    features: list[str] = []  # 删除的特征版本
+    last_version: bool | None = None  # 仅特征：是否该特征的最后一个版本（是则连同全部算子删除）
+    operators: list[str]  # 删除的算子版本引用
+    values: int  # 删除的特征值条数
+    bindings: int  # 删除的绑定修订数（算子一个版本都不剩时）
+    removed_operators: list[str]  # 一个版本都不剩、整个删掉的算子 feature_id/算子名
 
 
 class _Reviewed(Out):
@@ -82,10 +101,10 @@ class OperatorDetail(OperatorOut):
 
 
 class OperatorIn(BaseModel):
-    """新增算子（或同名算子的新版本）：直接填 operator.json 和代码。"""
+    """新增算子（或已有算子的新版本）：直接填 operator.json 和代码。"""
 
     feature_id: str
-    spec: dict  # operator.json：name、desc 必填
+    spec: dict  # operator.json：name（名称，新建时必填）、desc 必填；id 不填则后台生成，填已有算子的 id 即提交新版本
     code: str = Field(min_length=1)
     code_file: str | None = None  # 不填时为 {name}_v{version}.py
 
@@ -166,6 +185,11 @@ class OperatorMetaOut(BaseModel):
     feature_id: str
     operator: str
     name: str | None
+
+
+class FeatureRestoreOut(BaseModel):
+    feature: FeatureOut
+    operators: list[str]  # 一并重新上线的算子引用
 
 
 class FeatureRetireOut(BaseModel):

@@ -54,7 +54,7 @@ async def _seed(c: AsyncClient) -> None:
     ok(await c.post(F + "/submit", headers=ALICE))
     ok(await c.post(F + "/review", json={"decision": "approve"}, headers=BOB))
     await _publish_operator(c, spec, code)
-    await _publish_operator(c, {"name": "diffmax", "desc": "偏差最大值"}, code)
+    await _publish_operator(c, {"id": "diffmax", "name": "偏差最大值", "desc": "偏差最大值"}, code)
 
     rev = ok(await c.post(B, json=BINDING, headers=ALICE), 201)
     ok(await c.post(f"{B}/revisions/{rev['revision']}/review", json={"decision": "approve"}, headers=BOB))
@@ -366,7 +366,7 @@ async def test_operator_meta(client):
     page = ok(await client.get("/api/operators", params={"q": "峰值"}))
     assert [(o["ref"], o["display_name"]) for o in page["items"]] == [(f"{MAX}@1", "偏差峰值")]
     assert ok(await client.get("/api/operators/gas_flow_diffmean/diffmax/1"))["display_name"] == "偏差峰值"
-    assert ok(await client.get(O + "/1"))["display_name"] is None
+    assert ok(await client.get(O + "/1"))["display_name"] == "偏差均值"  # 新建时填的名称
     ok(await client.patch("/api/operators/gas_flow_diffmean/diffmax", json={"name": ""}, headers=ALICE))
     assert ok(await client.get("/api/operators/gas_flow_diffmean/diffmax/1"))["display_name"] is None
 

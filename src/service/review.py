@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
-"""特征和算子共用的状态流转：提交评审、评审、下线。
+"""特征和算子共用的状态流转：提交评审、评审、下线、重新上线、删除检查。
 
-draft --submit(本人)--> review --approve(他人)--> published --retire--> retired
+draft --submit(本人)--> review --approve(他人)--> published --retire--> retired --restore--> published
                          review --reject(他人, 意见)--> draft
+删除：自己的草稿，或已下线的（任何人）；已发布、待评审的不能删。
 """
 
 from src.api.schemas import ReviewIn
@@ -57,9 +58,25 @@ def retire(row, reason: str, user: str) -> None:
     row.status, row.retired_by, row.retired_at, row.retire_reason = "retired", user, now(), reason
 
 
-def check_deletable(row, user: str) -> None:
-    """只能删除自己的草稿。"""
-    if row.status != "draft":
-        raise invalid_state("只有草稿可以删除", row.status)
-    if row.created_by != user:
-        raise forbidden("只能删除自己的草稿")
+def restore(row, user: str, comment: str | None) -> None:
+    """已下线 -> 已发布（重新上线）。内容没变过，不再评审；在 review_log 里记一条 restore。"""
+    if row.status != "retired":
+        raise invalid_state("只有已下线的才能重新上线", row.status)
+    entry = {
+        "decision": "restore", "reviewer": user, "comment": (comment or "").strip() or None, "trial_runs": [],
+        "at": now().isoformat(), "retire_reason": row.retire_reason,
+    }
+    row.review_log = [*row.review_log, entry]
+    row.status, row.retired_by, row.retired_at, row.retire_reason = "published", None, None, None
+
+
+def check_removable(row, user: str) -> None:
+    """可删除：自己的草稿，或已下线的。已发布的先下线；待评审的先由评审人退回。"""
+    if row.status == "draft":
+        if row.created_by != user:
+            raise forbidden("只能删除自己的草稿")
+        return
+    if row.status == "published":
+        raise invalid_state("已发布的不能直接删除，请先下线", row.status)
+    if row.status == "review":
+        raise invalid_state("待评审的不能删除，请先由评审人退回", row.status)

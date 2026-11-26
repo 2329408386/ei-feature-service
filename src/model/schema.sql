@@ -63,6 +63,9 @@ CREATE TABLE IF NOT EXISTS operator (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS operator_code_file ON operator (feature_id, code_file);
 
+-- 新增特征不填 id 时由后台生成 feat_0001、feat_0002 …
+CREATE SEQUENCE IF NOT EXISTS feature_id_seq;
+
 -- 特征的显示名称：按 feature_id 保存（与版本无关），修改不需要评审；ID 永远不变。
 -- 特征关联的机台不存表：由生效绑定的 recipe 经 GDE 反查得出。
 CREATE TABLE IF NOT EXISTS feature_meta (

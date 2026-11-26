@@ -83,6 +83,16 @@ async def test_feature_lifecycle(client):
     bad = err(await client.post("/api/features", json={"id": "X"}, headers=ALICE), 422, "SPEC_INVALID")
     assert len(bad["details"]["errors"]) == 3
 
+    # 不填 id：后台生成 feat_xxxx，name 必填，version 默认 1.0.0
+    bad = err(await client.post("/api/features", json={"desc": "没有名称"}, headers=ALICE), 422, "SPEC_INVALID")
+    assert "name 必填" in bad["details"]["errors"][0]["message"]
+    auto = ok(await client.post("/api/features", json={"name": " 自动编号 ", "desc": "后台生成 id"}, headers=ALICE), 201)
+    assert auto["feature_id"].startswith("feat_") and auto["version"] == "1.0.0" and auto["display_name"] == "自动编号"
+    assert auto["spec"]["id"] == auto["feature_id"] and "name" not in auto["spec"]
+    ok(await client.delete(f"/api/features/{auto['feature_id']}/1.0.0", headers=ALICE), 204)
+    async with db.session() as s:  # 最后一个版本删掉后，名称也删掉
+        assert await s.scalar(text("SELECT count(*) FROM feature_meta WHERE feature_id = :f"), {"f": auto["feature_id"]}) == 0
+
     detail = ok(await client.get(F))
     assert detail["unit"] == "sccm" and detail["operators"] == []
 
@@ -131,17 +141,28 @@ async def test_operator_lifecycle(client):
     ok(await client.delete(O + "/2", headers=ALICE), 204)
 
     # 同一特征下的第二个算子
-    other = {**body, "spec": {"name": "diffmax", "desc": "偏差最大值"}}
+    other = {**body, "spec": {"id": "diffmax", "name": "偏差最大值", "desc": "偏差最大值"}}
     assert ok(await client.post("/api/operators", json=other, headers=ALICE), 201)["ref"] == "gas_flow_diffmean/diffmax@1"
     detail = ok(await client.get(F))
     assert [(o["name"], o["version"]) for o in detail["operators"]] == [("diffmax", 1), ("diffmean", 1)]
+
+    # 不填 id：后台生成 op_N（特征内唯一），name 必填；带已有 id 不带 name 即新版本，名称不变
+    nameless = {**body, "spec": {"desc": "没有名称"}}
+    bad = err(await client.post("/api/operators", json=nameless, headers=ALICE), 422, "SPEC_INVALID")
+    assert "name 必填" in bad["details"]["errors"][0]["message"]
+    auto = ok(await client.post("/api/operators", json={**body, "spec": {"name": "自动算子", "desc": "x"}}, headers=ALICE), 201)
+    assert (auto["name"], auto["display_name"], auto["code_file"]) == ("op_3", "自动算子", "op_3_v1.py")
+    v2 = ok(await client.post("/api/operators", json={**body, "spec": {"id": "op_3", "desc": "y"}}, headers=ALICE), 201)
+    assert (v2["ref"], v2["display_name"]) == ("gas_flow_diffmean/op_3@2", "自动算子")
+    for v in (2, 1):
+        ok(await client.delete(f"/api/operators/gas_flow_diffmean/op_3/{v}", headers=ALICE), 204)
     listed = ok(await client.get("/api/operators", params={"feature_id": "gas_flow_diffmean", "status": "published"}))
     assert [o["ref"] for o in listed["items"]] == [REF]
 
 
 async def test_operator_needs_published_feature(client):
     _, spec, code = load_sample()
-    ok(await client.post("/api/features", json={"id": "draft_only", "version": "1.0.0", "desc": "x"}, headers=ALICE), 201)
+    ok(await client.post("/api/features", json={"id": "draft_only", "name": "草稿特征", "version": "1.0.0", "desc": "x"}, headers=ALICE), 201)
     path = "/api/operators/draft_only/diffmean/1"
     ok(await client.post("/api/operators", json={"feature_id": "draft_only", "spec": spec, "code": code},
                          headers=ALICE), 201)
@@ -330,7 +351,7 @@ async def test_new_feature_version_and_retire_feature(client):
     assert [o["ref"] for o in old["operators"] if o["status"] == "published"] == []
 
     # 发布一个新算子并绑定，再整体下线特征：算子随之下线，绑定被清空
-    body = {"feature_id": "gas_flow_diffmean", "spec": {"name": "diffmax", "desc": "偏差最大值"}, "code": code}
+    body = {"feature_id": "gas_flow_diffmean", "spec": {"id": "diffmax", "name": "偏差最大值", "desc": "偏差最大值"}, "code": code}
     ok(await client.post("/api/operators/gas_flow_diffmean/diffmax/1/submit", headers=ALICE))  # 已在前面创建
     ok(await client.post("/api/operators/gas_flow_diffmean/diffmax/1/review",
                          json={"decision": "approve", "trial_runs": [RUN]}, headers=BOB))
@@ -341,3 +362,55 @@ async def test_new_feature_version_and_retire_feature(client):
     assert out["feature"]["status"] == "retired" and out["operators"] == ["gas_flow_diffmean/diffmax@1"]
     assert [a["recipes"] for a in out["affected"]] == [["RCP-0432"]]
     err(await client.post("/api/operators", json=body, headers=ALICE), 409, "INVALID_STATE")
+
+
+async def test_restore_and_delete(client):
+    """接上一个用例：1.0.0、1.1.0 都已下线；diffmean@1（有特征值）、diffmax@1 已下线。"""
+    fp = "/api/features/gas_flow_diffmean"
+    mx = "/api/operators/gas_flow_diffmean/diffmax/1"
+    # 特征没有已发布版本时，算子不能单独上线
+    out = err(await client.post(mx + "/restore", json={}, headers=ALICE), 409, "INVALID_STATE")
+    assert out["details"] == {"status": "unpublished"}
+
+    # 特征重新上线，随它下线的算子一并上线；同一特征不能同时上线两个版本
+    out = ok(await client.post(fp + "/1.1.0/restore", json={"comment": "恢复"}, headers=ALICE))
+    assert out["feature"]["status"] == "published" and out["feature"]["retire_reason"] is None
+    assert out["operators"] == ["gas_flow_diffmean/diffmax@1"]  # diffmean 是单独下线的，不跟着上线
+    log = ok(await client.get(mx))["review_log"][-1]
+    assert (log["decision"], log["reviewer"], log["retire_reason"]) == ("restore", "alice", "特征 gas_flow_diffmean@1.1.0 下线：停用")
+    err(await client.post(fp + "/1.0.0/restore", json={}, headers=ALICE), 409, "INVALID_STATE")
+    err(await client.post(mx + "/restore", json={}, headers=ALICE), 409, "INVALID_STATE")  # 已经是已发布
+    assert ok(await client.post(O + "/1/restore", json={}, headers=BOB))["status"] == "published"
+
+    # 已发布的不能删；下线后可以删（任何人），dry_run 先看影响范围
+    err(await client.delete(O + "/1", headers=ALICE), 409, "INVALID_STATE")
+    ok(await client.post(O + "/1/retire", json={"reason": "不用了"}, headers=ALICE))
+    impact = ok(await client.delete(O + "/1", params={"dry_run": True}, headers=BOB))
+    assert impact["operators"] == [REF] and impact["values"] > 0 and impact["bindings"] >= 5
+    assert impact["removed_operators"] == ["gas_flow_diffmean/diffmean"]
+    ok(await client.delete(O + "/1", headers=BOB), 204)
+    err(await client.get(O + "/1"), 404, "NOT_FOUND")
+    async with db.session() as s:
+        for table in ("feature_value", "operator_binding", "binding_item", "operator_meta"):
+            n = await s.scalar(text(f"SELECT count(*) FROM {table} WHERE feature_id = 'gas_flow_diffmean' "
+                                    "AND operator = 'diffmean'"))
+            assert n == 0, table
+
+    # 删特征：非最后一个版本只删该版本；最后一个版本连同全部算子、名称一起删
+    err(await client.delete(fp + "/1.1.0", headers=ALICE), 409, "INVALID_STATE")
+    ok(await client.post(fp + "/1.1.0/retire", json={"reason": "停用"}, headers=ALICE))
+    impact = ok(await client.delete(fp + "/1.0.0", params={"dry_run": True}, headers=ALICE))
+    assert (impact["last_version"], impact["operators"]) == (False, [])
+    ok(await client.delete(fp + "/1.0.0", headers=ALICE), 204)
+    impact = ok(await client.delete(fp + "/1.1.0", params={"dry_run": True}, headers=ALICE))
+    assert impact["last_version"] is True and impact["operators"] == ["gas_flow_diffmean/diffmax@1"]
+    assert impact["removed_operators"] == ["gas_flow_diffmean/diffmax"]
+    ok(await client.delete(fp + "/1.1.0", headers=ALICE), 204)
+    assert ok(await client.get("/api/operators", params={"feature_id": "gas_flow_diffmean"}))["total"] == 0
+    async with db.session() as s:
+        assert await s.scalar(text("SELECT count(*) FROM feature_meta WHERE feature_id = 'gas_flow_diffmean'")) == 0
+
+    # 别人的草稿不能删；特征下还有待评审算子时不能删最后一个版本
+    err(await client.delete("/api/features/draft_only/1.0.0", headers=BOB), 403, "FORBIDDEN")
+    out = err(await client.delete("/api/features/draft_only/1.0.0", headers=ALICE), 409, "INVALID_STATE")
+    assert "draft_only/diffmean@1" in out["message"]

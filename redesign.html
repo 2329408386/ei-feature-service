@@ -631,7 +631,7 @@ body.present .page { font-size: 1.06rem; }
   </div>
 
   <div class="mod-grid">
-    <div><b>特征管理</b><span>特征和算子直接填 JSON / 代码，自动检查、评审发布、下线；特征里可随时新增算子，同名算子自动升版本</span></div>
+    <div><b>特征管理</b><span>特征和算子直接填 JSON / 代码，自动检查、评审发布、下线；特征里可随时新增算子，同一算子自动升版本</span></div>
     <div><b>算子绑定</b><span>按 fleet → 腔室 → recipe 选择，只绑 recipe（选好后不再反查勾选机台 / 腔室）：GDE 按 recipe 推送全部腔室的执行；可导入导出；审核通过后生效，保存全部修订</span></div>
     <div><b>调度管理</b><span>绑定审核通过后经 SDK 注册订阅；监听 Redis 通知并分发计算；补算、重算</span></div>
     <div><b>计算引擎</b><span>调用 fetch(run_id) 经 SDK 取数、compute(data) 计算，结果写入 PostgreSQL；支持单次试跑</span></div>
@@ -777,14 +777,14 @@ body.present .page { font-size: 1.06rem; }
   <tr><th>方法</th><th>路径</th><th>作用</th></tr>
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/features</code></td><td>新增特征（直接提交 feature.json），自动检查通过后生成草稿</td></tr>
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/features/{id}/{version}/submit</code>、<code>/review</code></td><td>特征提交评审 / 评审（不需要试跑）；新版本发布时旧版本自动下线</td></tr>
-  <tr><td><span class="method m-post">POST</span></td><td><code>/api/features/{id}/{version}/retire</code></td><td>整个特征下线：已发布的算子一起下线并移出绑定，历史值保留</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/features/{id}/{version}/retire</code></td><td>整个特征下线：已发布的算子一起下线并移出绑定，历史值保留；<code>/restore</code> 重新上线（不再评审，可带回随它下线的算子）</td></tr>
   <tr><td><span class="method m-get">GET</span></td><td><code>/api/features</code>、<code>/api/features/{id}/{version}</code></td><td>特征列表（可按关联机台筛选）/ 详情（含该特征的全部算子和关联机台）</td></tr>
   <tr><td><span class="method m-patch">PATCH</span></td><td><code>/api/features/{id}</code>、<code>/api/operators/{fid}/{name}</code></td><td>修改特征 / 算子的显示名称；ID 不变，对全部版本生效，不需要评审</td></tr>
-  <tr><td><span class="method m-post">POST</span></td><td><code>/api/operators</code></td><td>在特征下新增算子（operator.json + 代码 + 可选文件名）；同名算子再次提交自动升版本，特征版本不变</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/operators</code></td><td>在特征下新增算子（operator.json 只填名称 + 代码 + 可选文件名，算子 ID 后台生成 <code>op_N</code>）；带已有算子 ID 提交即该算子新版本，特征版本不变</td></tr>
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/operators/{fid}/{name}/{ver}/submit</code>、<code>/review</code></td><td>算子提交评审 / 评审（通过前至少试跑 1 个 run_id）</td></tr>
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/operators/{fid}/{name}/{ver}/trial</code></td><td>试跑：传 <code>run_id</code>，执行一次 fetch + compute，返回数据概要和结果；不写入特征值</td></tr>
-  <tr><td><span class="method m-post">POST</span></td><td><code>/api/operators/{fid}/{name}/{ver}/retire</code></td><td>算子下线：从绑定中移除，历史值保留</td></tr>
-  <tr><td><span class="method m-get">GET</span></td><td><code>/api/operators</code>、<code>/api/operators/{fid}/{name}/{ver}</code></td><td>算子列表 / 详情（含代码）；<code>DELETE</code> 删除本人草稿</td></tr>
+  <tr><td><span class="method m-post">POST</span></td><td><code>/api/operators/{fid}/{name}/{ver}/retire</code></td><td>算子下线：从绑定中移除，历史值保留；<code>/restore</code> 重新上线（特征须已发布，绑定需重新提交）</td></tr>
+  <tr><td><span class="method m-get">GET</span></td><td><code>/api/operators</code>、<code>/api/operators/{fid}/{name}/{ver}</code></td><td>算子列表 / 详情（含代码）；<code>DELETE</code> 删除本人草稿或已下线的（<code>?dry_run=true</code> 先返回影响范围，前端弹窗警告）</td></tr>
   <tr><td><span class="method m-get">GET</span></td><td><code>/api/gde/*</code></td><td>GDE 元数据转发：绑定页面用 <code>recipes?q=</code>（模糊搜索）、<code>recipes/{recipe}/chambers</code>（只读展示覆盖的机台和腔室）；试跑选执行用 <code>fleets</code>、<code>fleets/{fleet}/chambers</code>、<code>chambers/{chamber}/recipes</code>、<code>runs</code></td></tr>
   <tr><td><span class="method m-get">GET</span></td><td><code>/api/bindings</code></td><td>算子绑定列表，可按 <code>feature_id</code>、<code>operator</code>、<code>recipe</code>、<code>status</code> 筛选</td></tr>
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/bindings/{feature_id}/{operator}</code></td><td>提交算子绑定（控制台根据选择自动生成），生成待审核修订</td></tr>
@@ -1025,7 +1025,7 @@ uv run pytest     <span class="c"># 测试</span></code></pre>
     tools: list[str]                      <span class="c"># 关联机台：各算子生效绑定的 recipe 经 GDE 反查到的机台（去重排序），不手填</span>
 
 <span class="k">class</span> Operator(Reviewed):
-    feature_id: str; name: str; version: int     <span class="c"># name 是 ID 的一部分，不可修改；同名算子再次提交时 +1</span>
+    feature_id: str; name: str; version: int     <span class="c"># name 即算子 ID（op_N，后台生成），不可修改；同一算子再次提交时 +1</span>
     code_file: str; code_hash: str
     ref: str                              <span class="c"># feature_id/name@version</span>
     display_name: str?                    <span class="c"># 取自 operator_meta：可修改的名称</span>
@@ -1068,15 +1068,17 @@ uv run pytest     <span class="c"># 测试</span></code></pre>
     <tr><td><span class="method m-get">GET</span> <code>/api/features/tools</code></td><td>—</td><td><code>[str]</code>：所有特征的关联机台（去重排序），供筛选下拉框。</td></tr>
     <tr><td><span class="method m-patch">PATCH</span> <code>/api/features/{id}</code></td><td><code>{"name": str?}</code>（≤ 64 字；null 或空串表示清空）</td><td><code>{"feature_id", "name"}</code>。写 feature_meta（不存在则插入）；feature_id 不存在 → 404。<b>ID 不变、对全部版本生效、不需要评审</b>。</td></tr>
     <tr><td><span class="method m-get">GET</span> <code>/api/features/{id}/{version}</code></td><td>—</td><td><code>Feature</code> + <code>operators: [Operator]</code>（该 feature_id 下全部算子、全部版本，按名称、版本降序）。</td></tr>
-    <tr><td><span class="method m-post">DELETE</span> <code>/api/features/{id}/{version}</code></td><td>—</td><td>204。仅 draft、仅 created_by 本人。</td></tr>
+    <tr><td><span class="method m-post">DELETE</span> <code>/api/features/{id}/{version}</code></td><td>—</td><td>可删：本人的 draft（他人 403），或 retired（任何人）；published / review → 409 <code>INVALID_STATE</code>。<code>?dry_run=true</code> 只返回 200 <code>DeleteImpact</code> <code>{"features", "last_version", "operators", "values", "bindings", "removed_operators"}</code>，否则 204。删的是该 feature_id 最后一个版本时，其下全部算子（特征值、绑定修订与明细、MinIO 对象、operator_meta）和 feature_meta 一并删除；此时还有 published / review 算子 → 409。不可恢复。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>…/{version}/restore</code></td><td><code>{"comment"?: str, "operators": bool = true}</code></td><td>仅 retired → published，<b>不再评审</b>；该 feature_id 已有 published 版本 → 409（先下线它）。清空 retired_*，review_log 追加 <code>{"decision": "restore", "reviewer": 操作人, "comment", "retire_reason": 原下线原因}</code>。operators=true 时，retire_reason 以“特征 {id}@{version} 下线”开头的 retired 算子一并上线。绑定不恢复。返回 <code>{"feature": Feature, "operators": [算子引用]}</code>。</td></tr>
     <tr><td><span class="method m-post">POST</span> <code>…/{version}/submit</code></td><td>—</td><td>仅 draft、仅本人 → review。</td></tr>
     <tr><td><span class="method m-post">POST</span> <code>…/{version}/review</code></td><td><code>{"decision", "comment"?}</code></td><td>仅 review；评审人 ≠ created_by。<b>特征评审不需要试跑</b>。approve → published，同一 feature_id 原来的 published 版本在同一事务里 → retired（retire_reason=“被 {version} 替代”，其算子不受影响）；reject 要求 comment → draft。</td></tr>
     <tr><td><span class="method m-post">POST</span> <code>…/{version}/retire</code></td><td><code>{"reason": str}</code></td><td>仅 published。表示整个特征下线：该版本 → retired，该 feature_id 下全部 published 算子按第 6 节“算子下线”一并下线。返回 <code>{"feature": Feature, "operators": [算子引用], "affected": [Affected]}</code>。</td></tr>
-    <tr><td><span class="method m-post">POST</span> <code>/api/operators</code></td><td><code>{"feature_id", "spec": operator.json, "code": str, "code_file"?: str}</code></td><td>201 <code>Operator</code>（draft）。feature_id 不存在 → 404；该特征所有版本都已下线 → 409 <code>INVALID_STATE</code>。version = 同名算子已有最大版本 + 1（没有则 1），<b>特征版本不变</b>。code_file 不填时为 <code>{name}_v{version}.py</code>；同一 feature_id 内重复 → <code>CODE_FILE_EXISTS</code>。先写 MinIO 再插库，插库失败时删除已写对象。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>/api/operators</code></td><td><code>{"feature_id", "spec": operator.json, "code": str, "code_file"?: str}</code></td><td>201 <code>Operator</code>（draft）。feature_id 不存在 → 404；该特征所有版本都已下线 → 409 <code>INVALID_STATE</code>。spec 不带 <code>id</code> 时新建算子：<code>name</code>（显示名称，1~64 字）必填，算子 ID 取该特征下第一个未用的 <code>op_N</code>，名称写入 operator_meta；带已有 <code>id</code> 时为该算子新版本（name 可选，填了则改名）。version = 该算子已有最大版本 + 1（没有则 1），<b>特征版本不变</b>。code_file 不填时为 <code>{name}_v{version}.py</code>；同一 feature_id 内重复 → <code>CODE_FILE_EXISTS</code>。先写 MinIO 再插库，插库失败时删除已写对象。</td></tr>
     <tr><td><span class="method m-get">GET</span> <code>/api/operators</code></td><td><code>feature_id?</code> <code>name?</code> <code>status?</code> <code>q?</code>（匹配算子名、显示名称或 desc）<code>page</code> <code>page_size</code></td><td>列表 <code>Operator</code>，按 feature_id、名称、版本降序。</td></tr>
     <tr><td><span class="method m-patch">PATCH</span> <code>/api/operators/{feature_id}/{name}</code></td><td><code>{"name": str?}</code>（≤ 64 字；null 或空串表示清空）</td><td><code>{"feature_id", "operator", "name"}</code>。写 operator_meta；算子不存在 → 404。算子名不变、对全部版本生效、不需要评审。</td></tr>
     <tr><td><span class="method m-get">GET</span> <code>/api/operators/{feature_id}/{name}/{version}</code></td><td>—</td><td><code>Operator</code> + <code>code: str</code>。</td></tr>
-    <tr><td><span class="method m-post">DELETE</span> <code>/api/operators/{…}/{version}</code></td><td>—</td><td>204。仅 draft、仅本人，同时删除 MinIO 对象。</td></tr>
+    <tr><td><span class="method m-post">DELETE</span> <code>/api/operators/{…}/{version}</code></td><td>—</td><td>可删：本人的 draft，或 retired（任何人）。同时删除该版本的特征值、引用它的绑定明细和 MinIO 对象；该算子一个版本都不剩时，其全部绑定修订和 operator_meta 一并删除。<code>?dry_run=true</code> 返回 <code>DeleteImpact</code>（同特征）。不可恢复。</td></tr>
+    <tr><td><span class="method m-post">POST</span> <code>…/{version}/restore</code></td><td><code>{"comment"?: str}</code></td><td>仅 retired → published，不再评审；该 feature_id 没有 published 版本 → 409（status=unpublished）。review_log 追加 restore 记录。绑定不恢复，需重新提交。返回 <code>Operator</code>。</td></tr>
     <tr><td><span class="method m-post">POST</span> <code>…/{version}/submit</code></td><td>—</td><td>仅 draft、仅本人 → review。</td></tr>
     <tr><td><span class="method m-post">POST</span> <code>…/{version}/review</code></td><td><code>{"decision", "comment"?, "trial_runs": [str]}</code></td><td>仅 review；评审人 ≠ created_by。approve 要求 trial_runs 非空（<code>TRIAL_REQUIRED</code>），且该 feature_id 有 published 版本（否则 409 <code>INVALID_STATE</code>，status=unpublished）→ published；reject 要求 comment → draft。都追加 review_log。</td></tr>
     <tr><td><span class="method m-post">POST</span> <code>…/{version}/retire</code></td><td><code>{"reason": str}</code></td><td>仅 published。按第 6 节“算子下线”。返回 <code>{"operator": Operator, "affected": [Affected]}</code>。</td></tr>
@@ -1111,10 +1113,13 @@ uv run pytest     <span class="c"># 测试</span></code></pre>
 review    --review approve(他人)-------&gt; published
 review    --review reject(他人, 意见)---&gt; draft
 published --retire(原因)---------------&gt; retired
+retired   --restore(任何人, 不评审)----&gt; published
+<span class="c"># 删除：本人的 draft、或 retired；published 先下线，review 先退回</span>
 <span class="c"># 特征：approve 时同 feature_id 旧的 published → retired（被替代）；</span>
 <span class="c">#       手动 retire 表示整个特征下线，全部 published 算子一起下线</span>
 <span class="c"># 算子：approve 需 trial_runs 非空，且特征已有 published 版本</span>
-<span class="c"># 两者都不能重复提交同一版本；draft 可由本人删除</span></code></pre>
+<span class="c"># 特征 restore：同 feature_id 不能已有 published；可带回随它下线的算子</span>
+<span class="c"># 算子 restore：特征须有 published 版本；绑定都不自动恢复</span></code></pre>
   </div>
   <div>
   <div class="file">绑定修订 operator_binding.status</div>
@@ -1295,7 +1300,7 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
   <h3>11. 前端（单独仓库）</h3>
   <div class="table-wrap"><table class="nowrap-first">
     <tr><th>路由</th><th>页面内容</th><th>调用</th></tr>
-    <tr><td><code>/features</code></td><td>筛选栏（<b>机台</b>、状态、关键字）+ 特征表格（特征名称与 ID、<b>计算的机台</b>（<code>tools</code>，由绑定的 recipe 推导，点一个即按它筛选；没有生效绑定显示“未绑定”）、版本、说明、算子数、状态、提交人、评审人、操作），展开一行显示该特征的算子表（算子名称与 ID、版本、文件、状态、操作）。特征、算子名称旁有编辑按钮：修改名称，ID 不变、不需要评审；新增特征 / 新算子时也可顺带填写。操作：新增特征（表单直接填 feature.json）、<b>新增算子</b>（填 operator.json、粘贴或编辑代码，可选填 py 文件名，不填显示默认 <code>{name}_v{n}.py</code>；同名算子自动成为新版本）、提交评审、评审、下线、试跑（算子）。<b>试跑</b>的 run_id 可直接输入，也可逐级选：时间范围 + fleet → 腔室（<code>fleets/{fleet}/chambers</code>）→ recipe（<code>chambers/{chamber}/recipes</code>）→ 执行列表（<code>runs</code>），点一行即填入。特征评审：描述 + 意见；算子评审：描述、代码（只读高亮）、试跑框、评审清单、意见。</td><td>features、operators 全部接口</td></tr>
+    <tr><td><code>/features</code></td><td>筛选栏（<b>机台</b>、状态、关键字）+ 特征表格（特征名称与 ID、<b>计算的机台</b>（<code>tools</code>，由绑定的 recipe 推导，点一个即按它筛选；没有生效绑定显示“未绑定”）、版本、说明、算子数、状态、提交人、评审人、操作），展开一行显示该特征的算子表（算子名称与 ID、版本、文件、状态、操作）。特征、算子名称旁有编辑按钮：修改名称，ID 不变、不需要评审；新增特征 / 新算子时<b>必填名称</b>，ID 不填（显示“保存后由后台自动生成”，算子预显示将生成的 <code>op_N</code>），JSON 编辑框里不出现 id、name。操作：新增特征（名称 + feature.json 其余字段）、新版本（ID 只读）、<b>新增算子</b>（名称 + operator.json、粘贴或编辑代码，可选填 py 文件名，不填显示默认 <code>{id}_v{n}.py</code>）、算子新版本（按 ID 提交，名称预填可改）、提交评审、评审、下线、试跑（算子）、<b>重新上线</b>（已下线的：弹窗显示下线原因、可填说明；特征可勾选一并上线随它下线的算子；提示绑定需重新提交。同一特征已有已发布版本、或算子所在特征没有已发布版本时按钮置灰并提示原因）、<b>删除</b>（本人草稿或已下线的：先 <code>DELETE ?dry_run=true</code> 取影响范围，红色警告弹窗列出会删的特征版本、算子、特征值条数、绑定修订数，并说明“不可恢复，暂时不用请下线”，确认后才删）。<b>试跑</b>的 run_id 可直接输入，也可逐级选：时间范围 + fleet → 腔室（<code>fleets/{fleet}/chambers</code>）→ recipe（<code>chambers/{chamber}/recipes</code>）→ 执行列表（<code>runs</code>），点一行即填入。特征评审：描述 + 意见；算子评审：描述、代码（只读高亮）、试跑框、评审清单、意见。</td><td>features、operators 全部接口</td></tr>
     <tr><td><code>/bindings</code></td><td>左侧算子列表（显示名称，可按特征、算子、recipe、状态筛选）；右侧编辑所选算子的绑定，三步：<br>① <b>选 fleet + 时间范围</b>（默认最近 30 天）→ <code>/api/gde/fleets/{fleet}/chambers</code>，返回的腔室按机台分组、<b>默认全部勾选</b>，可取消（机台一键全选 / 全不选）。fleet、腔室只用来缩小 recipe 候选，不写进绑定；<br>② <b>选 recipe</b>：候选为勾选腔室在时间范围内跑过的 recipe 并集（逐个调 <code>/api/gde/chambers/{chamber}/recipes</code>，前端缓存），输入关键字过滤，点击加入，也可“全部加入”；没选 fleet 时直接在 <code>/api/gde/recipes?q=</code> 中模糊搜索（防抖 300 ms）。已选 recipe 显示为可移除的标签，<b>选好后不再反查、不勾选机台 / 腔室</b>：审核通过后按 recipe 订阅 GDE，GDE 推送它关联的所有机台 / 腔室（含以后新增的）；<br>③ 选算子版本（默认最新已发布版本），实时生成的绑定 JSON，历史修订与对比，提交审核 / 撤销修改。另有导入、导出。</td><td>bindings 全部接口；<code>/api/gde/*</code></td></tr>
     <tr><td><code>/schedules</code></td><td><b>树形表</b>（<code>/api/schedules/tree</code>）：第一层特征（名称、算子数 / recipe 数 / 机台数）→ 点开是算子（名称、生效版本、recipe 数）→ 点开是 recipe（机台 / 腔室数、订阅 ID、是否已同步 / 最近错误、已处理到、状态、暂停 / 恢复、补算、重算）→ 点开是机台 / 腔室（各自已处理到）。可按特征、recipe、机台、腔室筛选，可一键收起 / 展开到 recipe / 全部展开。暂停作用于整个 recipe（提示会影响绑定它的全部算子）。批次表可按 recipe、类型、状态筛选，可取消。补算 / 重算对话框按 recipe 勾选算子（默认只勾所在的算子），覆盖该 recipe 下全部腔室。</td><td>schedules、batches</td></tr>
     <tr><td><code>/results</code></td><td>筛选栏（<b>recipe</b>、机台、腔室、特征 → 算子、7 / 30 天；recipe、机台、腔室候选来自调度页数据，选了 recipe 后机台 / 腔室只列跑过它的）+ 折线图（ECharts；正常值、重算后的值、空值三种点）+ 点击点显示来源 + 空值原因统计。</td><td>values、batches/{id}</td></tr>
@@ -1310,7 +1315,7 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
   <h3>12. 测试与验收</h3>
   <div class="table-wrap"><table>
     <tr><th>范围</th><th>必须覆盖</th></tr>
-    <tr><td>提交校验</td><td>feature.json、operator.json、code_file、代码每条规则至少一个通过、一个失败用例；特征版本递增判断（1.0.10 &gt; 1.0.9）；同名算子版本自动 +1、默认文件名、文件名重复 409。</td></tr>
+    <tr><td>提交校验</td><td>feature.json、operator.json、code_file、代码每条规则至少一个通过、一个失败用例；特征版本递增判断（1.0.10 &gt; 1.0.9）；同一算子版本自动 +1、默认文件名、文件名重复 409。</td></tr>
     <tr><td>eifeature</td><td>steps / window 边界；dedup、resample、despike、slope、mean、std 与手算结果一致（误差 1e-9）。</td></tr>
     <tr><td>沙箱</td><td>第 9 节原因码映射表每一行；死循环被杀；compute 中调用 gde 报错。</td></tr>
     <tr><td>状态机</td><td>第 6 节每条转移的允许 / 拒绝，包括本人评审 403、本人审核 403、他人撤回 403；新特征版本发布时旧版本自动下线；特征未发布时算子不能发布。</td></tr>
@@ -1401,21 +1406,24 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
     <tr><td>新增特征</td><td>新建，如 1.0.0</td><td>—</td><td>需要（不用试跑）</td></tr>
     <tr><td>修改特征说明 / 单位</td><td>新版本，如 1.1.0；发布后旧版本自动下线</td><td>不变，算子挂在特征 ID 下</td><td>需要</td></tr>
     <tr><td>特征里新增一个算子</td><td><b>不变</b></td><td>新算子从 1 开始</td><td>需要（至少试跑 1 个 run_id）</td></tr>
-    <tr><td>再次提交同名算子（改代码）</td><td><b>不变</b></td><td>自动 +1，如 diffmean 1 → 2</td><td>需要（至少试跑 1 个 run_id）</td></tr>
+    <tr><td>再次提交同一算子（改代码）</td><td><b>不变</b></td><td>自动 +1，如 op_1 1 → 2</td><td>需要（至少试跑 1 个 run_id）</td></tr>
+    <tr><td>下线后重新上线</td><td>原版本恢复为已发布</td><td>原版本恢复（特征上线时可一并带回）</td><td>不需要；绑定需重新提交</td></tr>
+    <tr><td>删除（草稿或已下线）</td><td>删除该版本；最后一个版本连同全部算子</td><td>删除该版本及其特征值</td><td>不需要；弹窗列出影响范围，确认后不可恢复</td></tr>
   </table></div>
+  <p class="muted">新增特征、算子时<b>只填名称</b>（name，1~64 字，之后可改），ID 由后台生成：特征 <code>feat_0001</code>、<code>feat_0002</code>…（序列 <code>feature_id_seq</code>），算子在特征内 <code>op_1</code>、<code>op_2</code>…。ID 一经生成不变；新版本按 ID 提交。</p>
 
   <div class="cols">
   <div>
   <div class="file">feature.json（新增特征时填写）</div>
 <pre><code>{
-  <span class="k">"id"</span>: <span class="s">"gas_flow_diffmean"</span>,
-  <span class="k">"version"</span>: <span class="s">"1.0.0"</span>,
+  <span class="k">"name"</span>: <span class="s">"气体流量偏差"</span>,   <span class="c">// 必填；id 不填，后台生成 feat_NNNN</span>
+  <span class="k">"version"</span>: <span class="s">"1.0.0"</span>,   <span class="c">// 新建可省略，默认 1.0.0；新版本时带 "id"</span>
   <span class="k">"desc"</span>: <span class="s">"主刻蚀阶段工艺气体流量偏差"</span>,
   <span class="k">"output"</span>: { <span class="k">"unit"</span>: <span class="s">"sccm/s"</span> }
 }</code></pre>
   <div class="file">operator.json（新增算子时填写）</div>
 <pre><code>{
-  <span class="k">"name"</span>: <span class="s">"slope_mean"</span>,
+  <span class="k">"name"</span>: <span class="s">"流量斜率均值"</span>,   <span class="c">// 必填；id 不填，后台生成 op_N；新版本时带 "id": "op_2"</span>
   <span class="k">"desc"</span>: <span class="s">"主刻蚀第 10~20 秒流量的平均变化率"</span>
 }</code></pre>
   <div class="file">POST /api/operators</div>
@@ -1561,9 +1569,9 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
 
   <h3>修改已发布的算子</h3>
   <div class="figure" style="padding:12px 16px">
-  <svg viewBox="0 0 880 70" role="img" aria-label="提交同名算子得到新版本，评审发布，在算子绑定中切换版本，下线旧版本">
+  <svg viewBox="0 0 880 70" role="img" aria-label="提交同一算子得到新版本，评审发布，在算子绑定中切换版本，下线旧版本">
     <g font-size="13" text-anchor="middle" font-weight="600">
-      <rect x="10" y="14" width="190" height="42" rx="14" fill="#F1EDFF"/><text x="105" y="40" fill="#7C5CFF">提交同名算子 → v2</text>
+      <rect x="10" y="14" width="190" height="42" rx="14" fill="#F1EDFF"/><text x="105" y="40" fill="#7C5CFF">提交同一算子 → v2</text>
       <rect x="236" y="14" width="190" height="42" rx="14" fill="#FFF3E8"/><text x="331" y="40" fill="#F08A3C">评审发布</text>
       <rect x="462" y="14" width="190" height="42" rx="14" fill="#EDF2FF"/><text x="557" y="40" fill="#4C6FFF">算子绑定切换版本</text>
       <rect x="688" y="14" width="182" height="42" rx="14" fill="#F1F3F8"/><text x="779" y="40" fill="#8A94AB">下线旧版本</text>
@@ -1802,7 +1810,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   <tr><td>GDE 源数据被修正</td><td>在「调度」页点“重算”，选择受影响的特征和时间段，重新取数计算</td></tr>
   <tr><td>取数异常<br><span class="muted">如 SDK 取数超时导致大量空值</span></td><td>问题解决后点“重算”，覆盖这段时间的空值</td></tr>
   <tr><td>recipe 漏选</td><td>在算子绑定中补上 → 在「调度」页对该 recipe “补算”（新腔室不会漏：GDE 按 recipe 自动推送）</td></tr>
-  <tr><td>算子代码有误</td><td>已发布版本不能改，同一版本重算结果也不会变。正确做法：再次提交同名算子得到新版本（如 v2）→ 试跑、评审发布 → 在算子绑定中把版本换成 2 → 补算出错时间段 → 下游切换后下线旧版本</td></tr>
+  <tr><td>算子代码有误</td><td>已发布版本不能改，同一版本重算结果也不会变。正确做法：再次提交同一算子得到新版本（如 v2）→ 试跑、评审发布 → 在算子绑定中把版本换成 2 → 补算出错时间段 → 下游切换后下线旧版本</td></tr>
   </table>
   </div>
   <div class="note"><strong>重算不会丢失历史：</strong>旧的批次记录全部保留，能查到一个值在什么时候、因为什么原因被改过。</div>
@@ -1896,7 +1904,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   <table class="nowrap-first">
   <tr><th>表</th><th>变化</th></tr>
   <tr><td><code>feature</code></td><td>只保留元数据（feature.json），去掉 <code>package_uri</code>、<code>package_hash</code>；部分唯一索引保证同一 feature_id 只有一个已发布版本</td></tr>
-  <tr><td><code>operator</code></td><td><b>新增</b>：(feature_id, name, version) 一行，version 为整数，同名再提交 +1；<code>code_file</code>（用户指定或 <code>{name}_v{version}.py</code>，同一特征内唯一）、<code>code_uri</code>、<code>code_hash</code>；评审 / 下线字段与 feature 相同</td></tr>
+  <tr><td><code>operator</code></td><td><b>新增</b>：(feature_id, name, version) 一行，version 为整数，同一算子再提交 +1；<code>code_file</code>（用户指定或 <code>{name}_v{version}.py</code>，同一特征内唯一）、<code>code_uri</code>、<code>code_hash</code>；评审 / 下线字段与 feature 相同</td></tr>
   <tr><td><code>feature_meta</code> / <code>operator_meta</code></td><td><b>新增</b>：特征、算子的显示名称；按 ID 保存、与版本无关，修改不需要评审。特征的关联机台不存表，由绑定的 recipe 推导</td></tr>
   <tr><td><code>operator_binding</code></td><td><b>替代 chamber_binding</b>：修订以算子为单位，spec 为 {feature_id, operator, version, recipes: [recipe]}，只绑 recipe、不选腔室；不再存订阅 ID</td></tr>
   <tr><td><code>binding_item</code></td><td>“修订 × recipe”一行，带算子 version；引擎按 recipe 查要算的算子</td></tr>
@@ -1982,6 +1990,9 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   <span class="k">PRIMARY KEY</span> (feature_id, name, version)
 );
 <span class="k">CREATE UNIQUE INDEX</span> <span class="k">IF NOT EXISTS</span> operator_code_file <span class="k">ON</span> operator (feature_id, code_file);
+
+<span class="c">-- 新增特征不填 id 时由后台生成 feat_0001、feat_0002 …</span>
+<span class="k">CREATE SEQUENCE</span> <span class="k">IF NOT EXISTS</span> feature_id_seq;
 
 <span class="c">-- 特征的显示名称：按 feature_id 保存（与版本无关），修改不需要评审；ID 永远不变。</span>
 <span class="c">-- 特征关联的机台不存表：由生效绑定的 recipe 经 GDE 反查得出。</span>
@@ -2784,7 +2795,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
       '<p class="muted" style="font-size:.86rem">重算在事务内先删后插；被覆盖的旧批次保留，并标记“已被覆盖”。</p>' +
       '<textarea id="redo-note" placeholder="补充说明（可选），会记录在批次上"></textarea></div>' +
       '<div id="redo-code" hidden><div class="callout"><strong>同一版本重算，结果不会变。</strong>按以下步骤修复：</div><ol class="steps-list">' +
-      '<li>再次提交同名算子得到新版本（如 v2），试跑后提交评审。</li>' +
+      '<li>再次提交同一算子得到新版本（如 v2），试跑后提交评审。</li>' +
       '<li>评审通过并发布。</li>' +
       '<li>在算子绑定中把版本换成 2，提交新修订并审核。</li>' +
       '<li>在这里“补算”出错的时间段。</li>' +
@@ -2799,7 +2810,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
         mmsg('');
       });
     });
-    $('redo-go').onclick = function () { closeModal(); go('features'); api('GET', '/api/features', '在特征下点“新增算子”，同名提交即为新版本'); };
+    $('redo-go').onclick = function () { closeModal(); go('features'); api('GET', '/api/features', '在特征下点“新增算子”，按算子 ID 提交即为新版本'); };
     $('b-ok').onclick = function () {
       var fs = readFeats(); if (!fs.length) return;
       var r = readRange(); if (!r) return;

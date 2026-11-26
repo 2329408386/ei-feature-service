@@ -1,7 +1,7 @@
 from src.service.package import check_code, check_feature_spec, check_operator
 
 FEATURE = {"id": "demo_feature", "version": "1.0.0", "desc": "示例"}
-OPERATOR = {"name": "demo_op", "desc": "示例算子"}
+OPERATOR = {"id": "demo_op", "name": "示例算子", "desc": "示例算子"}
 CODE = "from eifeature import gde\n\ndef fetch(run_id):\n    return {}\n\ndef compute(data):\n    return 1.0\n"
 
 
@@ -26,8 +26,9 @@ def test_bad_feature_spec_reports_all_errors():
 
 
 def test_bad_operator_spec():
-    errs = messages({"name": "X", "desc": " "})
-    assert len(errs) == 2 and all(e for e in errs)
+    errs = messages({"id": "X", "name": " ", "desc": " "})
+    assert len(errs) == 3 and all(e for e in errs)
+    assert messages({"desc": "不带 id、name 也能通过静态校验（是否必填由服务按新建与否判断）"}) == []
 
 
 def test_code_file_name():

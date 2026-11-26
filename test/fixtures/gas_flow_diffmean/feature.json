@@ -1,5 +1,6 @@
 {
   "id": "gas_flow_diffmean",
+  "name": "气体流量偏差",
   "version": "1.0.0",
   "desc": "主刻蚀步骤气体流量偏差",
   "output": {"unit": "sccm"}

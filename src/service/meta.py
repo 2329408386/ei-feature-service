@@ -92,17 +92,32 @@ async def attach_operators(s, rows: list[Operator]) -> list[Operator]:
     return rows
 
 
+async def upsert_feature_name(s, feature_id: str, name: str | None, user: str) -> None:
+    """在调用方事务里写特征显示名称。"""
+    name = _clean(name)
+    await s.execute(
+        insert(FeatureMeta).values(feature_id=feature_id, name=name, updated_by=user)
+        .on_conflict_do_update(index_elements=["feature_id"], set_={"name": name, "updated_by": user, "updated_at": now()})
+    )
+
+
+async def upsert_operator_name(s, feature_id: str, operator: str, name: str | None, user: str) -> None:
+    """在调用方事务里写算子显示名称。"""
+    name = _clean(name)
+    await s.execute(
+        insert(OperatorMeta).values(feature_id=feature_id, operator=operator, name=name, updated_by=user)
+        .on_conflict_do_update(index_elements=["feature_id", "operator"],
+                               set_={"name": name, "updated_by": user, "updated_at": now()})
+    )
+
+
 async def set_feature(feature_id: str, name: str | None, user: str) -> dict:
     """修改特征的显示名称，返回 {feature_id, name}。"""
     async with db.session() as s:
         if await s.scalar(select(Feature.feature_id).where(Feature.feature_id == feature_id).limit(1)) is None:
             raise not_found(f"特征 {feature_id}")
-        name = _clean(name)
-        await s.execute(
-            insert(FeatureMeta).values(feature_id=feature_id, name=name, updated_by=user)
-            .on_conflict_do_update(index_elements=["feature_id"], set_={"name": name, "updated_by": user, "updated_at": now()})
-        )
-    return {"feature_id": feature_id, "name": name}
+        await upsert_feature_name(s, feature_id, name, user)
+    return {"feature_id": feature_id, "name": _clean(name)}
 
 
 async def set_operator(feature_id: str, operator: str, name: str | None, user: str) -> dict:
@@ -112,10 +127,5 @@ async def set_operator(feature_id: str, operator: str, name: str | None, user: s
             Operator.feature_id == feature_id, Operator.name == operator).limit(1))
         if exists is None:
             raise not_found(f"算子 {feature_id}/{operator}")
-        name = _clean(name)
-        await s.execute(
-            insert(OperatorMeta).values(feature_id=feature_id, operator=operator, name=name, updated_by=user)
-            .on_conflict_do_update(index_elements=["feature_id", "operator"],
-                                   set_={"name": name, "updated_by": user, "updated_at": now()})
-        )
-    return {"feature_id": feature_id, "operator": operator, "name": name}
+        await upsert_operator_name(s, feature_id, operator, name, user)
+    return {"feature_id": feature_id, "operator": operator, "name": _clean(name)}

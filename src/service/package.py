@@ -12,6 +12,7 @@ import re
 from src.util import semver
 
 ID = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
+NAME_MAX = 64  # 显示名称最长字数
 CODE_FILE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}\.py$")
 CODE_MAX_BYTES = 256 * 1024
 ALLOWED_IMPORTS = {
@@ -32,11 +33,21 @@ def _check_desc(file: str, spec: dict) -> list[dict]:
     return []
 
 
+def _check_id_name(file: str, spec: dict) -> list[dict]:
+    """id 可省略（新增时后台生成），给了就要合规；name 是显示名称，是否必填由调用方按“是否新建”判断。"""
+    errors = []
+    if "id" in spec and not ID.match(str(spec["id"])):
+        errors.append(_err(file, "id 必须是小写字母开头，由小写字母、数字、下划线组成，3~64 位（新增时不用填，后台自动生成）"))
+    name = spec.get("name")
+    if name is not None and (not isinstance(name, str) or not 1 <= len(name.strip()) <= NAME_MAX):
+        errors.append(_err(file, f"name（名称）必须是 1~{NAME_MAX} 字的字符串"))
+    return errors
+
+
 def check_feature_spec(spec: dict) -> list[dict]:
-    """校验 feature.json：id、version、desc、output.unit。"""
-    f, errors = FEATURE_FILE, []
-    if not ID.match(str(spec.get("id", ""))):
-        errors.append(_err(f, "id 必须是小写字母开头，由小写字母、数字、下划线组成，3~64 位"))
+    """校验 feature.json：id（可省略）、name、version、desc、output.unit。"""
+    f = FEATURE_FILE
+    errors = _check_id_name(f, spec)
     if not semver.is_valid(str(spec.get("version", ""))):
         errors.append(_err(f, "version 必须形如 1.0.0"))
     errors += _check_desc(f, spec)
@@ -50,11 +61,12 @@ def check_feature_spec(spec: dict) -> list[dict]:
 
 
 def check_operator_spec(spec: dict) -> list[dict]:
-    """校验 operator.json：name（命名规则同特征 id）、desc。"""
-    f, errors = OPERATOR_FILE, []
-    if not ID.match(str(spec.get("name", ""))):
-        errors.append(_err(f, "name 必须是小写字母开头，由小写字母、数字、下划线组成，3~64 位"))
-    return errors + _check_desc(f, spec)
+    """校验 operator.json：id（算子 ID，可省略，规则同特征 id）、name（名称）、desc。"""
+    return _check_id_name(OPERATOR_FILE, spec) + _check_desc(OPERATOR_FILE, spec)
+
+
+def name_required(file: str) -> dict:
+    return _err(file, f"name 必填：新建时要填写名称（1~{NAME_MAX} 字），id 由后台自动生成")
 
 
 def check_code_file(code_file: str) -> list[dict]:
