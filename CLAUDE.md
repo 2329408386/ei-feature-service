@@ -17,7 +17,25 @@ uv run main.py                                           # 启动服务 :8000，
 uv run pytest -q                                         # 全部测试
 uv run pytest test/unit -q                               # 只跑单元测试（不依赖外部服务）
 uv run pytest test/integration/test_flow.py -q           # 集成测试（需要 PostgreSQL）
+uv run pytest test/integration/test_migrations.py -q     # 迁移往返测试（临时库 ei_feature_migration_test，用完删除）
 ```
+
+## 数据库迁移（Alembic）
+
+表结构由 `src/model/migrations/versions/` 下按顺序编号的迁移文件定义，`0001_baseline` 是第 1 版。服务启动时自动升级到最新，降级只手动执行。
+
+```bash
+uv run alembic current                              # 当前版本
+uv run alembic history                              # 全部版本
+uv run alembic upgrade head                         # 升到最新（启动时也会自动执行）
+uv run alembic downgrade -1                         # 降一个版本；也可 downgrade 0001 / base（base 会删光所有表）
+uv run alembic upgrade head --sql                   # 只输出 SQL，不执行
+uv run alembic revision -m "说明" --rev-id 0002     # 新建迁移
+```
+
+- 改表 = 新建迁移文件，`upgrade()` / `downgrade()` 都用原生 SQL 写全（多语句或含冒号用 `op.get_bind().exec_driver_sql(sql)`），同步改 `tables.py` 和设计文档；已合入的迁移不再修改。
+- 数据库地址仍只来自 `config/config.json`（env.py 读取，`alembic.ini` 不写地址）。
+- 接入 Alembic 前建的库（有 `feature` 表、无 `alembic_version`）首次运行时自动记为 `0001`，不执行建表。更早的“特征包 + 按腔室绑定”“recipe × 腔室绑定”旧库不兼容，需先清空。
 
 本地依赖（仅绑定 127.0.0.1，账号仅供开发）：
 
@@ -39,13 +57,13 @@ uv run pytest test/integration/test_flow.py -q           # 集成测试（需要
 
 ## 架构
 
-单进程：`main.py` 启动时 读配置 → 执行 `src/model/schema.sql`（全部 `IF NOT EXISTS`，带 advisory lock）→ 启动后台任务 → uvicorn。没有单独的 worker；多实例靠 Redis 消费组和 `FOR UPDATE SKIP LOCKED` 去重。
+单进程：`main.py` 启动时 读配置 → `alembic upgrade head`（`db.migrate()`，env.py 内带 advisory lock）→ 启动后台任务 → uvicorn。没有单独的 worker；多实例靠 Redis 消费组和 `FOR UPDATE SKIP LOCKED` 去重。
 
 - `src/api/` — FastAPI 路由（features / operators / bindings / gde / schedules / batches / values），统一前缀 `/api`；`schemas.py` 是请求/响应模型；`gde.py` 把 fleet、腔室、recipe、执行列表等元数据转发给前端（绑定页、试跑选 run_id）。
 - `src/service/` — 业务逻辑：`feature.py`（特征，新版本发布时旧版本自动下线；restore / remove）、`operator.py`（算子，按 ID 再提交版本 +1；restore / remove）、`review.py`（共用状态流转，含 restore、check_removable）、`binding.py`（按算子的绑定修订，spec 只有 recipes 列表）、`subscription.py`（`recipe_subscription` 按 recipe 汇总 wanted、对账同步 GDE 订阅）、`meta.py`（`feature_meta`/`operator_meta` 显示名称，PATCH 直接改、不评审；特征关联机台 = 生效绑定 recipe 经 GDE 反查，带 60 秒缓存）、`schedule.py`（以 recipe 为键；`/schedules/tree` 为 特征 → 算子 → recipe → 机台腔室）、批次（按 recipe，覆盖全部腔室）、取值。
 - `src/engine/` — 后台计算：`live.py` 消费 Redis Stream `gde:run:done` 做实时计算；`batch_runner.py` 补算/重算；`sandbox.py` 用 pebble 进程池隔离执行算子代码；`writer.py` 写结果；`jobs.py` 定时任务：实时批次收尾 + 每分钟同步未同步的 recipe 订阅。后台任务由 `_supervise` 包装，异常 10 秒后重启。
 - `src/eifeature/` — 算子运行库（算子代码里 `from eifeature import gde, ops, Skip`）：`fetch(run_id)` 取数，`compute(data)` 纯计算，数据不合格 `raise Skip("REASON_CODE")`。
-- `src/model/` — `schema.sql` 建表（无迁移工具；与旧的“特征包 + 按腔室绑定”表结构不兼容，旧库需先清空；从“recipe × 腔室”绑定升级时开头的 DO 块会转换绑定修订，并删除重建 chamber_subscription、feature_batch、feature_value），`tables.py` 为 SQLAlchemy ORM 模型（DeclarativeBase）。
+- `src/model/` — `migrations/`（Alembic，见下文“数据库迁移”），`tables.py` 为 SQLAlchemy ORM 模型（DeclarativeBase，只做映射，不建表）。
 - `src/util/` — config、db（异步引擎、`session()` 事务、`lock()` advisory lock）、storage（MinIO/本地，对象键 `features/{feature_id}/operators/{name}/{version}/`）、auth、errors、stream、gde 等。
 
 ## 约定

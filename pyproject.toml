@@ -15,6 +15,7 @@ dependencies = [
     "pebble==5.2.3",
     "numpy==2.5.5",
     # TODO: GDE SDK 确认包名后加一行 == 固定版本
+    "alembic==1.20.1",
 ]
 
 [dependency-groups]

@@ -38,7 +38,7 @@ BINDING = {"feature_id": "gas_flow_diffmean", "operator": "diffmean", "version":
 
 async def reset() -> None:
     db.configure()
-    await db.init_schema()
+    await db.migrate()
     async with db.session() as s:
         await s.execute(text(f"TRUNCATE {TABLES} RESTART IDENTITY CASCADE"))
 

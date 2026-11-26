@@ -808,7 +808,7 @@ body.present .page { font-size: 1.06rem; }
 <section class="page" id="spec">
   <span class="kicker">实现规格</span>
   <h2>照着这一页就能写出代码</h2>
-  <p class="lede">本页把前三页的设计落到工程细节：技术栈、目录、配置、接口的请求与响应、状态机、GDE SDK 适配层、计算引擎的处理流程、前端页面和验收标准。前三页（含各页“设计说明”弹窗里的 schema.sql）与本页一起构成完整规格；两处不一致时以本页为准。</p>
+  <p class="lede">本页把前三页的设计落到工程细节：技术栈、目录、配置、接口的请求与响应、状态机、GDE SDK 适配层、计算引擎的处理流程、前端页面和验收标准。前三页（含各页“设计说明”弹窗里的建表 SQL）与本页一起构成完整规格；两处不一致时以本页为准。</p>
 
   <h3>1. 技术栈与运行方式</h3>
   <div class="table-wrap"><table class="nowrap-first">
@@ -816,13 +816,13 @@ body.present .page { font-size: 1.06rem; }
     <tr><td>语言</td><td>Python 3.12</td></tr>
     <tr><td>依赖管理</td><td>uv；依赖全部用 <code>==</code> 固定版本，<code>uv.lock</code> 提交到仓库</td></tr>
     <tr><td>Web</td><td>FastAPI + Pydantic v2，uvicorn 由 <code>main.py</code> 在代码里启动</td></tr>
-    <tr><td>数据库</td><td>PostgreSQL + SQLAlchemy 2.0（async）+ psycopg 3；不用迁移工具，建表 SQL 在启动时执行</td></tr>
+    <tr><td>数据库</td><td>PostgreSQL + SQLAlchemy 2.0（async）+ psycopg 3；Alembic 管理表结构版本（手写 SQL 迁移），启动时自动升级到最新</td></tr>
     <tr><td>Redis / MinIO</td><td>redis-py（Stream + 消费组）；minio</td></tr>
     <tr><td>沙箱</td><td>pebble 进程池（单任务超时可杀子进程）</td></tr>
     <tr><td>测试</td><td>pytest + pytest-asyncio + httpx + fakeredis</td></tr>
     <tr><td>前端</td><td>单独的仓库，不放在本仓库；页面规格见第 11 节</td></tr>
   </table></div>
-  <p><strong>运行：</strong>在根目录执行 <code>uv sync</code> 后 <code>uv run main.py</code>。一个进程同时提供 REST API 和后台计算（监听 Redis、补算重算、实时批次收尾、同步 recipe 订阅），不需要 Dockerfile，也不需要单独的 worker 进程。启动时依次：读 <code>config/config.json</code> → 执行 <code>src/model/schema.sql</code>（全部 <code>IF NOT EXISTS</code>，重复执行无副作用）→ 启动后台任务 → 启动 uvicorn。多实例部署时直接多起几个，消费组和 <code>FOR UPDATE SKIP LOCKED</code> 保证不重复处理。</p>
+  <p><strong>运行：</strong>在根目录执行 <code>uv sync</code> 后 <code>uv run main.py</code>。一个进程同时提供 REST API 和后台计算（监听 Redis、补算重算、实时批次收尾、同步 recipe 订阅），不需要 Dockerfile，也不需要单独的 worker 进程。启动时依次：读 <code>config/config.json</code> → <code>alembic upgrade head</code>（把库升级到最新版本，已是最新则不做任何事）→ 启动后台任务 → 启动 uvicorn。多实例部署时直接多起几个，消费组和 <code>FOR UPDATE SKIP LOCKED</code> 保证不重复处理。</p>
 
   <h3>2. 代码仓目录</h3>
 <pre><code>ei-feature-service/
@@ -856,7 +856,7 @@ body.present .page { font-size: 1.06rem; }
 │   │   └── writer.py      <span class="c"># 写 feature_value、维护批次计数</span>
 │   ├── model/
 │   │   ├── tables.py      <span class="c"># SQLAlchemy ORM，七张表</span>
-│   │   └── schema.sql     <span class="c"># 建表与索引（全部 IF NOT EXISTS）</span>
+│   │   └── migrations/    <span class="c"># Alembic：env.py + versions/0001_baseline.py …（每次改表一个迁移）</span>
 │   ├── eifeature/         <span class="c"># 算子运行库：gde、ops、Series、Skip（第 7 节）</span>
 │   └── util/              <span class="c"># 与业务无关、可复用的部分</span>
 │       ├── config.py      <span class="c"># 读 config.json，以及第 3 节的代码常量</span>
@@ -925,7 +925,7 @@ asyncio_mode = <span class="s">"auto"</span></code></pre>
 
 @asynccontextmanager
 <span class="k">async def</span> lifespan(app):
-    <span class="k">await</span> db.init_schema()        <span class="c"># 执行 src/model/schema.sql</span>
+    <span class="k">await</span> db.migrate()           <span class="c"># alembic upgrade head</span>
     tasks = engine.start()        <span class="c"># live、batch_runner、jobs</span>
     <span class="k">yield</span>
     <span class="k">await</span> engine.stop(tasks)
@@ -1289,7 +1289,7 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
   <p class="muted">试跑在处理请求的同一进程内执行：同一个 <code>sandbox.run</code>，受 <code>TRIAL_CONCURRENCY</code> 信号量限制，超时与原因码规则相同，结果直接返回不写库。</p>
 
   <h3>10. 数据库</h3>
-  <p class="muted">完整的 <code>src/model/schema.sql</code> 见“结果 · 设计说明”弹窗（两者逐字一致），启动时整体执行，所有 <code>CREATE TABLE</code> / <code>CREATE INDEX</code> 都写成 <code>IF NOT EXISTS</code>。以后加字段追加到这个文件，用 <code>ALTER TABLE … ADD COLUMN IF NOT EXISTS</code>。本版表结构与“特征包 + 按腔室绑定”的旧版不兼容（旧表 <code>chamber_binding</code>、<code>gde_outbox</code> 已删除），旧库需先清空再启动。从“recipe × 腔室”绑定升级到只绑 recipe 时由 schema.sql 开头的 <code>DO</code> 块自动处理：绑定修订转成新格式并重建明细，<code>chamber_subscription</code>、<code>feature_batch</code>、<code>feature_value</code> 删除重建（特征值可补算），特征和算子不受影响。几个关键约束：</p>
+  <p class="muted">表结构用 Alembic 管理版本，迁移文件在 <code>src/model/migrations/versions/</code>，按 <code>0001</code>、<code>0002</code> … 顺序编号；第 1 版（<code>0001_baseline</code>）的完整 SQL 见“结果 · 设计说明”弹窗（两者逐字一致）。服务启动时自动执行 <code>alembic upgrade head</code>（<code>env.py</code> 内持有 advisory lock，多实例同时启动只有一个在迁移）；降级只手动执行 <code>uv run alembic downgrade -1</code>（或指定版本 / <code>base</code>）。以后改表：<code>uv run alembic revision -m "说明" --rev-id 000N</code> 新建迁移，<code>upgrade()</code> 和 <code>downgrade()</code> 都用原生 SQL 写全，同步修改 <code>tables.py</code>；已合入的迁移文件不再修改。接入 Alembic 之前建的库（有业务表、没有 <code>alembic_version</code>）首次运行时自动记为 <code>0001</code>，不执行建表；更早的“特征包 + 按腔室绑定”“recipe × 腔室绑定”旧库不兼容，需先清空。几个关键约束：</p>
   <ul>
     <li><code>feature_one_published</code>：同一 feature_id 最多一个 published 版本。</li>
     <li><code>operator_code_file</code>：同一 feature_id 内代码文件名唯一。</li>
@@ -1929,25 +1929,10 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   </table>
   </div>
 
-  <div class="file">schema.sql（与 src/model/schema.sql 一致）</div>
-<pre><code><span class="c">-- 升级：绑定从“recipe × 腔室”改为只绑 recipe（GDE 按 recipe 订阅、自动推送该 recipe 下全部腔室的执行）。</span>
-<span class="c">-- 检测到旧的 binding_item（含 chamber 列）时：绑定修订的 spec 转成新格式并重建明细；</span>
-<span class="c">-- 腔室订阅、批次、特征值按腔室组织，无法转换，直接删除（特征值可用补算重新生成）。特征和算子不受影响。</span>
-<span class="k">DO</span> $$
-<span class="k">BEGIN</span>
-  <span class="k">IF EXISTS</span> (<span class="k">SELECT</span> 1 <span class="k">FROM</span> information_schema.columns
-             <span class="k">WHERE</span> table_schema = current_schema() <span class="k">AND</span> table_name = <span class="s">'binding_item'</span> <span class="k">AND</span> column_name = <span class="s">'chamber'</span>) <span class="k">THEN</span>
-    <span class="k">RAISE NOTICE</span> <span class="s">'ei-feature-service：升级为按 recipe 绑定，删除旧的腔室订阅、批次和特征值'</span>;
-    <span class="k">DROP TABLE</span> binding_item;
-    <span class="k">DROP TABLE IF EXISTS</span> chamber_subscription, feature_value, feature_batch;
-    <span class="k">UPDATE</span> operator_binding <span class="k">SET</span> spec = (spec - <span class="s">'fleet'</span>) || jsonb_build_object(<span class="s">'recipes'</span>, <span class="k">COALESCE</span>(
-      (<span class="k">SELECT</span> jsonb_agg(DISTINCT r-&gt;&gt;<span class="s">'recipe'</span>) <span class="k">FROM</span> jsonb_array_elements(spec-&gt;<span class="s">'recipes'</span>) r), <span class="s">'[]'</span>::jsonb));
-  <span class="k">END IF</span>;
-<span class="k">END</span> $$;
-
-<span class="c">-- 特征：每个 (feature_id, version) 一行，只有元数据（feature.json），计算代码在算子里。</span>
+  <div class="file">第 1 版表结构（与 src/model/migrations/versions/0001_baseline.py 一致）</div>
+<pre><code><span class="c">-- 特征：每个 (feature_id, version) 一行，只有元数据（feature.json），计算代码在算子里。</span>
 <span class="c">-- 同一 feature_id 同时最多一个 published 版本：新版本评审通过时旧的已发布版本自动下线。</span>
-<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> feature (
+<span class="k">CREATE TABLE</span> feature (
   feature_id    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   version       <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   status        <span class="k">TEXT</span>        <span class="k">NOT NULL</span> <span class="k">CHECK</span> (status <span class="k">IN</span> (<span class="s">'draft'</span>, <span class="s">'review'</span>, <span class="s">'published'</span>, <span class="s">'retired'</span>)),
@@ -1964,11 +1949,11 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   updated_at    <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> now(),
   <span class="k">PRIMARY KEY</span> (feature_id, version)
 );
-<span class="k">CREATE UNIQUE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_one_published <span class="k">ON</span> feature (feature_id) <span class="k">WHERE</span> status = <span class="s">'published'</span>;
+<span class="k">CREATE UNIQUE INDEX</span> feature_one_published <span class="k">ON</span> feature (feature_id) <span class="k">WHERE</span> status = <span class="s">'published'</span>;
 
 <span class="c">-- 算子：挂在 feature_id 下（不随特征版本变化），同名算子再次提交时版本号 +1（整数，从 1 开始）。</span>
 <span class="c">-- 新增算子不改变特征版本；每个算子版本单独评审。</span>
-<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> operator (
+<span class="k">CREATE TABLE</span> operator (
   feature_id    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   name          <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   version       <span class="k">INT</span>         <span class="k">NOT NULL</span>,
@@ -1989,23 +1974,22 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   updated_at    <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> now(),
   <span class="k">PRIMARY KEY</span> (feature_id, name, version)
 );
-<span class="k">CREATE UNIQUE INDEX</span> <span class="k">IF NOT EXISTS</span> operator_code_file <span class="k">ON</span> operator (feature_id, code_file);
+<span class="k">CREATE UNIQUE INDEX</span> operator_code_file <span class="k">ON</span> operator (feature_id, code_file);
 
 <span class="c">-- 新增特征不填 id 时由后台生成 feat_0001、feat_0002 …</span>
-<span class="k">CREATE SEQUENCE</span> <span class="k">IF NOT EXISTS</span> feature_id_seq;
+<span class="k">CREATE SEQUENCE</span> feature_id_seq;
 
 <span class="c">-- 特征的显示名称：按 feature_id 保存（与版本无关），修改不需要评审；ID 永远不变。</span>
 <span class="c">-- 特征关联的机台不存表：由生效绑定的 recipe 经 GDE 反查得出。</span>
-<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> feature_meta (
+<span class="k">CREATE TABLE</span> feature_meta (
   feature_id <span class="k">TEXT</span>        <span class="k">PRIMARY KEY</span>,
   name       <span class="k">TEXT</span>,                                  <span class="c">-- 显示名称；为空时页面显示 feature_id</span>
   updated_by <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   updated_at <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> now()
 );
-<span class="k">ALTER TABLE</span> feature_meta <span class="k">DROP COLUMN IF EXISTS</span> tool_type;  <span class="c">-- 旧版手填的机台类型，已改为按 recipe 推导</span>
 
 <span class="c">-- 算子的显示名称：按 (feature_id, 算子名) 保存，与版本无关；算子名（引用里的 operator）不变。</span>
-<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> operator_meta (
+<span class="k">CREATE TABLE</span> operator_meta (
   feature_id <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   operator   <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   name       <span class="k">TEXT</span>,
@@ -2015,7 +1999,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
 );
 
 <span class="c">-- 算子绑定：每个算子一套修订，每次提交 / 导入 / 系统修改都新增一个修订</span>
-<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> operator_binding (
+<span class="k">CREATE TABLE</span> operator_binding (
   feature_id    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   operator      <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   revision      <span class="k">INT</span>         <span class="k">NOT NULL</span>,
@@ -2032,11 +2016,11 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   superseded_at <span class="k">TIMESTAMPTZ</span>,
   <span class="k">PRIMARY KEY</span> (feature_id, operator, revision)
 );
-<span class="k">CREATE UNIQUE INDEX</span> <span class="k">IF NOT EXISTS</span> operator_binding_one_pending <span class="k">ON</span> operator_binding (feature_id, operator) <span class="k">WHERE</span> status = <span class="s">'pending'</span>;
-<span class="k">CREATE UNIQUE INDEX</span> <span class="k">IF NOT EXISTS</span> operator_binding_one_active  <span class="k">ON</span> operator_binding (feature_id, operator) <span class="k">WHERE</span> status = <span class="s">'active'</span>;
+<span class="k">CREATE UNIQUE INDEX</span> operator_binding_one_pending <span class="k">ON</span> operator_binding (feature_id, operator) <span class="k">WHERE</span> status = <span class="s">'pending'</span>;
+<span class="k">CREATE UNIQUE INDEX</span> operator_binding_one_active  <span class="k">ON</span> operator_binding (feature_id, operator) <span class="k">WHERE</span> status = <span class="s">'active'</span>;
 
 <span class="c">-- 绑定明细：修订展开成每个 recipe 一行，随修订写入、不再修改</span>
-<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> binding_item (
+<span class="k">CREATE TABLE</span> binding_item (
   feature_id <span class="k">TEXT</span> <span class="k">NOT NULL</span>,
   operator   <span class="k">TEXT</span> <span class="k">NOT NULL</span>,
   revision   <span class="k">INT</span>  <span class="k">NOT NULL</span>,
@@ -2046,19 +2030,12 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   <span class="k">FOREIGN KEY</span> (feature_id, operator, revision) <span class="k">REFERENCES</span> operator_binding,
   <span class="k">FOREIGN KEY</span> (feature_id, operator, version) <span class="k">REFERENCES</span> operator
 );
-<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> binding_item_recipe   <span class="k">ON</span> binding_item (recipe);
-<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> binding_item_operator <span class="k">ON</span> binding_item (feature_id, operator, version);
-
-<span class="c">-- 升级后重建明细：只有明细为空、而修订里有 recipe 时才会插入（正常运行时为空操作）</span>
-<span class="k">INSERT INTO</span> binding_item (feature_id, operator, revision, recipe, version)
-<span class="k">SELECT</span> b.feature_id, b.operator, b.revision, r, b.version
-<span class="k">FROM</span> operator_binding b <span class="k">CROSS JOIN LATERAL</span> jsonb_array_elements_text(b.spec-&gt;<span class="s">'recipes'</span>) r
-<span class="k">WHERE</span> <span class="k">NOT EXISTS</span> (<span class="k">SELECT</span> 1 <span class="k">FROM</span> binding_item)
-<span class="k">ON CONFLICT DO NOTHING</span>;
+<span class="k">CREATE INDEX</span> binding_item_recipe   <span class="k">ON</span> binding_item (recipe);
+<span class="k">CREATE INDEX</span> binding_item_operator <span class="k">ON</span> binding_item (feature_id, operator, version);
 
 <span class="c">-- recipe 订阅：GDE 按 recipe 订阅，订阅后自动推送该 recipe 在所有机台 / 腔室上的执行（含以后新增的腔室）。</span>
 <span class="c">-- wanted = 有生效绑定包含该 recipe；与 GDE 实际状态（gde_sub_id 是否为空）不一致时由后台任务同步</span>
-<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> recipe_subscription (
+<span class="k">CREATE TABLE</span> recipe_subscription (
   recipe     <span class="k">TEXT</span>        <span class="k">PRIMARY KEY</span>,
   wanted     <span class="k">BOOLEAN</span>     <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> <span class="k">false</span>,
   gde_sub_id <span class="k">TEXT</span>,
@@ -2068,15 +2045,8 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   synced_at  <span class="k">TIMESTAMPTZ</span>
 );
 
-<span class="c">-- 补齐缺失的订阅行（升级后首次启动）：生效绑定里有、表里还没有的 recipe 记为需要订阅，由后台任务同步到 GDE</span>
-<span class="k">INSERT INTO</span> recipe_subscription (recipe, wanted)
-<span class="k">SELECT DISTINCT</span> i.recipe, <span class="k">true</span>
-<span class="k">FROM</span> binding_item i <span class="k">JOIN</span> operator_binding b <span class="k">USING</span> (feature_id, operator, revision)
-<span class="k">WHERE</span> b.status = <span class="s">'active'</span>
-<span class="k">ON CONFLICT DO NOTHING</span>;
-
 <span class="c">-- 计算批次：实时（按 recipe + 整点）、补算、重算（按 recipe，覆盖该 recipe 下全部腔室）</span>
-<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> feature_batch (
+<span class="k">CREATE TABLE</span> feature_batch (
   batch_id      <span class="k">BIGSERIAL</span>   <span class="k">PRIMARY KEY</span>,
   mode          <span class="k">TEXT</span>        <span class="k">NOT NULL</span> <span class="k">CHECK</span> (mode <span class="k">IN</span> (<span class="s">'live'</span>, <span class="s">'fill'</span>, <span class="s">'overwrite'</span>)),
   status        <span class="k">TEXT</span>        <span class="k">NOT NULL</span> <span class="k">CHECK</span> (status <span class="k">IN</span> (<span class="s">'queued'</span>, <span class="s">'running'</span>, <span class="s">'done'</span>, <span class="s">'failed'</span>, <span class="s">'cancelled'</span>)),
@@ -2095,12 +2065,12 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   started_at    <span class="k">TIMESTAMPTZ</span>,
   finished_at   <span class="k">TIMESTAMPTZ</span>
 );
-<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_batch_recipe <span class="k">ON</span> feature_batch (recipe, created_at);
-<span class="k">CREATE UNIQUE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_batch_live_uq <span class="k">ON</span> feature_batch (recipe, data_from) <span class="k">WHERE</span> mode = <span class="s">'live'</span>;
-<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_batch_queue <span class="k">ON</span> feature_batch (status, batch_id) <span class="k">WHERE</span> status <span class="k">IN</span> (<span class="s">'queued'</span>, <span class="s">'running'</span>);
+<span class="k">CREATE INDEX</span> feature_batch_recipe <span class="k">ON</span> feature_batch (recipe, created_at);
+<span class="k">CREATE UNIQUE INDEX</span> feature_batch_live_uq <span class="k">ON</span> feature_batch (recipe, data_from) <span class="k">WHERE</span> mode = <span class="s">'live'</span>;
+<span class="k">CREATE INDEX</span> feature_batch_queue <span class="k">ON</span> feature_batch (status, batch_id) <span class="k">WHERE</span> status <span class="k">IN</span> (<span class="s">'queued'</span>, <span class="s">'running'</span>);
 
 <span class="c">-- 特征值：每次执行每个算子版本一行；value 与 reason 恰好一个非空</span>
-<span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> feature_value (
+<span class="k">CREATE TABLE</span> feature_value (
   feature_id    <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   operator      <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   version       <span class="k">INT</span>         <span class="k">NOT NULL</span>,
@@ -2119,11 +2089,11 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   <span class="k">CHECK</span> ((value <span class="k">IS NULL</span>) &lt;&gt; (reason <span class="k">IS NULL</span>)),
   <span class="k">PRIMARY KEY</span> (feature_id, operator, version, run_id)
 );
-<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_value_chamber <span class="k">ON</span> feature_value (chamber, feature_id, operator, version, run_end_at);
-<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_value_tool    <span class="k">ON</span> feature_value (tool, run_end_at);
-<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_value_recipe  <span class="k">ON</span> feature_value (recipe, feature_id, operator, version, run_end_at);
-<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_value_wafer   <span class="k">ON</span> feature_value (wafer);
-<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_value_batch   <span class="k">ON</span> feature_value (batch_id);</code></pre>
+<span class="k">CREATE INDEX</span> feature_value_chamber <span class="k">ON</span> feature_value (chamber, feature_id, operator, version, run_end_at);
+<span class="k">CREATE INDEX</span> feature_value_tool    <span class="k">ON</span> feature_value (tool, run_end_at);
+<span class="k">CREATE INDEX</span> feature_value_recipe  <span class="k">ON</span> feature_value (recipe, feature_id, operator, version, run_end_at);
+<span class="k">CREATE INDEX</span> feature_value_wafer   <span class="k">ON</span> feature_value (wafer);
+<span class="k">CREATE INDEX</span> feature_value_batch   <span class="k">ON</span> feature_value (batch_id);</code></pre>
 
   <div class="cols">
   <div>

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
-"""ORM 映射。表结构以 schema.sql 为准，这里只做映射，不用于建表。"""
+"""ORM 映射。表结构以 src/model/migrations/versions/ 下的迁移为准，这里只做映射，不用于建表。"""
 
 from datetime import datetime
 

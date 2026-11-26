@@ -22,9 +22,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """启动时建表并启动后台任务，退出时停止后台任务并关闭连接池。"""
+    """启动时升级库结构并启动后台任务，退出时停止后台任务并关闭连接池。"""
     db.configure()
-    await db.init_schema()  # 建表语句均为 IF NOT EXISTS，可重复执行
+    await db.migrate()  # alembic upgrade head：库升级到最新版本
     tasks = engine.start()
     yield
     await engine.stop(tasks)

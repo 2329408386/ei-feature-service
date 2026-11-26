@@ -1,25 +1,21 @@
--- ei-feature-service 表结构。启动时整体执行一次，所有语句都可重复执行。
--- 以后加字段：在文件末尾追加 ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...
--- 本版（特征 + 算子 + 按算子绑定）与旧版（特征包 + 按腔室绑定）表结构不兼容，旧库需先清空再启动。
+"""第 1 版：特征 + 算子 + 按算子绑定 recipe 的全部表结构（迁移工具接入前的最终结构）。
 
--- 升级：绑定从“recipe × 腔室”改为只绑 recipe（GDE 按 recipe 订阅、自动推送该 recipe 下全部腔室的执行）。
--- 检测到旧的 binding_item（含 chamber 列）时：绑定修订的 spec 转成新格式并重建明细；
--- 腔室订阅、批次、特征值按腔室组织，无法转换，直接删除（特征值可用补算重新生成）。特征和算子不受影响。
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.columns
-             WHERE table_schema = current_schema() AND table_name = 'binding_item' AND column_name = 'chamber') THEN
-    RAISE NOTICE 'ei-feature-service：升级为按 recipe 绑定，删除旧的腔室订阅、批次和特征值';
-    DROP TABLE binding_item;
-    DROP TABLE IF EXISTS chamber_subscription, feature_value, feature_batch;
-    UPDATE operator_binding SET spec = (spec - 'fleet') || jsonb_build_object('recipes', COALESCE(
-      (SELECT jsonb_agg(DISTINCT r->>'recipe') FROM jsonb_array_elements(spec->'recipes') r), '[]'::jsonb));
-  END IF;
-END $$;
+修订号：0001
+上一版：无
+创建于：2026-11-26
+"""
 
+from alembic import op
+
+revision = "0001"
+down_revision = None
+branch_labels = None
+depends_on = None
+
+UPGRADE_SQL = r"""
 -- 特征：每个 (feature_id, version) 一行，只有元数据（feature.json），计算代码在算子里。
 -- 同一 feature_id 同时最多一个 published 版本：新版本评审通过时旧的已发布版本自动下线。
-CREATE TABLE IF NOT EXISTS feature (
+CREATE TABLE feature (
   feature_id    TEXT        NOT NULL,
   version       TEXT        NOT NULL,
   status        TEXT        NOT NULL CHECK (status IN ('draft', 'review', 'published', 'retired')),
@@ -36,11 +32,11 @@ CREATE TABLE IF NOT EXISTS feature (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (feature_id, version)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS feature_one_published ON feature (feature_id) WHERE status = 'published';
+CREATE UNIQUE INDEX feature_one_published ON feature (feature_id) WHERE status = 'published';
 
 -- 算子：挂在 feature_id 下（不随特征版本变化），同名算子再次提交时版本号 +1（整数，从 1 开始）。
 -- 新增算子不改变特征版本；每个算子版本单独评审。
-CREATE TABLE IF NOT EXISTS operator (
+CREATE TABLE operator (
   feature_id    TEXT        NOT NULL,
   name          TEXT        NOT NULL,
   version       INT         NOT NULL,
@@ -61,23 +57,22 @@ CREATE TABLE IF NOT EXISTS operator (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (feature_id, name, version)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS operator_code_file ON operator (feature_id, code_file);
+CREATE UNIQUE INDEX operator_code_file ON operator (feature_id, code_file);
 
 -- 新增特征不填 id 时由后台生成 feat_0001、feat_0002 …
-CREATE SEQUENCE IF NOT EXISTS feature_id_seq;
+CREATE SEQUENCE feature_id_seq;
 
 -- 特征的显示名称：按 feature_id 保存（与版本无关），修改不需要评审；ID 永远不变。
 -- 特征关联的机台不存表：由生效绑定的 recipe 经 GDE 反查得出。
-CREATE TABLE IF NOT EXISTS feature_meta (
+CREATE TABLE feature_meta (
   feature_id TEXT        PRIMARY KEY,
   name       TEXT,                                  -- 显示名称；为空时页面显示 feature_id
   updated_by TEXT        NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-ALTER TABLE feature_meta DROP COLUMN IF EXISTS tool_type;  -- 旧版手填的机台类型，已改为按 recipe 推导
 
 -- 算子的显示名称：按 (feature_id, 算子名) 保存，与版本无关；算子名（引用里的 operator）不变。
-CREATE TABLE IF NOT EXISTS operator_meta (
+CREATE TABLE operator_meta (
   feature_id TEXT        NOT NULL,
   operator   TEXT        NOT NULL,
   name       TEXT,
@@ -87,7 +82,7 @@ CREATE TABLE IF NOT EXISTS operator_meta (
 );
 
 -- 算子绑定：每个算子一套修订，每次提交 / 导入 / 系统修改都新增一个修订
-CREATE TABLE IF NOT EXISTS operator_binding (
+CREATE TABLE operator_binding (
   feature_id    TEXT        NOT NULL,
   operator      TEXT        NOT NULL,
   revision      INT         NOT NULL,
@@ -104,11 +99,11 @@ CREATE TABLE IF NOT EXISTS operator_binding (
   superseded_at TIMESTAMPTZ,
   PRIMARY KEY (feature_id, operator, revision)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS operator_binding_one_pending ON operator_binding (feature_id, operator) WHERE status = 'pending';
-CREATE UNIQUE INDEX IF NOT EXISTS operator_binding_one_active  ON operator_binding (feature_id, operator) WHERE status = 'active';
+CREATE UNIQUE INDEX operator_binding_one_pending ON operator_binding (feature_id, operator) WHERE status = 'pending';
+CREATE UNIQUE INDEX operator_binding_one_active  ON operator_binding (feature_id, operator) WHERE status = 'active';
 
 -- 绑定明细：修订展开成每个 recipe 一行，随修订写入、不再修改
-CREATE TABLE IF NOT EXISTS binding_item (
+CREATE TABLE binding_item (
   feature_id TEXT NOT NULL,
   operator   TEXT NOT NULL,
   revision   INT  NOT NULL,
@@ -118,19 +113,12 @@ CREATE TABLE IF NOT EXISTS binding_item (
   FOREIGN KEY (feature_id, operator, revision) REFERENCES operator_binding,
   FOREIGN KEY (feature_id, operator, version) REFERENCES operator
 );
-CREATE INDEX IF NOT EXISTS binding_item_recipe   ON binding_item (recipe);
-CREATE INDEX IF NOT EXISTS binding_item_operator ON binding_item (feature_id, operator, version);
-
--- 升级后重建明细：只有明细为空、而修订里有 recipe 时才会插入（正常运行时为空操作）
-INSERT INTO binding_item (feature_id, operator, revision, recipe, version)
-SELECT b.feature_id, b.operator, b.revision, r, b.version
-FROM operator_binding b CROSS JOIN LATERAL jsonb_array_elements_text(b.spec->'recipes') r
-WHERE NOT EXISTS (SELECT 1 FROM binding_item)
-ON CONFLICT DO NOTHING;
+CREATE INDEX binding_item_recipe   ON binding_item (recipe);
+CREATE INDEX binding_item_operator ON binding_item (feature_id, operator, version);
 
 -- recipe 订阅：GDE 按 recipe 订阅，订阅后自动推送该 recipe 在所有机台 / 腔室上的执行（含以后新增的腔室）。
 -- wanted = 有生效绑定包含该 recipe；与 GDE 实际状态（gde_sub_id 是否为空）不一致时由后台任务同步
-CREATE TABLE IF NOT EXISTS recipe_subscription (
+CREATE TABLE recipe_subscription (
   recipe     TEXT        PRIMARY KEY,
   wanted     BOOLEAN     NOT NULL DEFAULT false,
   gde_sub_id TEXT,
@@ -140,15 +128,8 @@ CREATE TABLE IF NOT EXISTS recipe_subscription (
   synced_at  TIMESTAMPTZ
 );
 
--- 补齐缺失的订阅行（升级后首次启动）：生效绑定里有、表里还没有的 recipe 记为需要订阅，由后台任务同步到 GDE
-INSERT INTO recipe_subscription (recipe, wanted)
-SELECT DISTINCT i.recipe, true
-FROM binding_item i JOIN operator_binding b USING (feature_id, operator, revision)
-WHERE b.status = 'active'
-ON CONFLICT DO NOTHING;
-
 -- 计算批次：实时（按 recipe + 整点）、补算、重算（按 recipe，覆盖该 recipe 下全部腔室）
-CREATE TABLE IF NOT EXISTS feature_batch (
+CREATE TABLE feature_batch (
   batch_id      BIGSERIAL   PRIMARY KEY,
   mode          TEXT        NOT NULL CHECK (mode IN ('live', 'fill', 'overwrite')),
   status        TEXT        NOT NULL CHECK (status IN ('queued', 'running', 'done', 'failed', 'cancelled')),
@@ -167,12 +148,12 @@ CREATE TABLE IF NOT EXISTS feature_batch (
   started_at    TIMESTAMPTZ,
   finished_at   TIMESTAMPTZ
 );
-CREATE INDEX IF NOT EXISTS feature_batch_recipe ON feature_batch (recipe, created_at);
-CREATE UNIQUE INDEX IF NOT EXISTS feature_batch_live_uq ON feature_batch (recipe, data_from) WHERE mode = 'live';
-CREATE INDEX IF NOT EXISTS feature_batch_queue ON feature_batch (status, batch_id) WHERE status IN ('queued', 'running');
+CREATE INDEX feature_batch_recipe ON feature_batch (recipe, created_at);
+CREATE UNIQUE INDEX feature_batch_live_uq ON feature_batch (recipe, data_from) WHERE mode = 'live';
+CREATE INDEX feature_batch_queue ON feature_batch (status, batch_id) WHERE status IN ('queued', 'running');
 
 -- 特征值：每次执行每个算子版本一行；value 与 reason 恰好一个非空
-CREATE TABLE IF NOT EXISTS feature_value (
+CREATE TABLE feature_value (
   feature_id    TEXT        NOT NULL,
   operator      TEXT        NOT NULL,
   version       INT         NOT NULL,
@@ -191,8 +172,23 @@ CREATE TABLE IF NOT EXISTS feature_value (
   CHECK ((value IS NULL) <> (reason IS NULL)),
   PRIMARY KEY (feature_id, operator, version, run_id)
 );
-CREATE INDEX IF NOT EXISTS feature_value_chamber ON feature_value (chamber, feature_id, operator, version, run_end_at);
-CREATE INDEX IF NOT EXISTS feature_value_tool    ON feature_value (tool, run_end_at);
-CREATE INDEX IF NOT EXISTS feature_value_recipe  ON feature_value (recipe, feature_id, operator, version, run_end_at);
-CREATE INDEX IF NOT EXISTS feature_value_wafer   ON feature_value (wafer);
-CREATE INDEX IF NOT EXISTS feature_value_batch   ON feature_value (batch_id);
+CREATE INDEX feature_value_chamber ON feature_value (chamber, feature_id, operator, version, run_end_at);
+CREATE INDEX feature_value_tool    ON feature_value (tool, run_end_at);
+CREATE INDEX feature_value_recipe  ON feature_value (recipe, feature_id, operator, version, run_end_at);
+CREATE INDEX feature_value_wafer   ON feature_value (wafer);
+CREATE INDEX feature_value_batch   ON feature_value (batch_id);
+"""
+
+DOWNGRADE_SQL = """
+DROP TABLE feature_value, feature_batch, recipe_subscription, binding_item, operator_binding,
+           operator_meta, feature_meta, operator, feature;
+DROP SEQUENCE feature_id_seq;
+"""
+
+
+def upgrade() -> None:
+    op.get_bind().exec_driver_sql(UPGRADE_SQL)  # 原样执行，避免 SQL 注释里的冒号被当成绑定参数
+
+
+def downgrade() -> None:
+    op.get_bind().exec_driver_sql(DOWNGRADE_SQL)
