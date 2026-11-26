@@ -48,22 +48,23 @@ async def create(spec: dict, user: str) -> Feature:
     return row
 
 
-async def list_features(status: str | None, q: str | None, feature_id: str | None, tool_type: str | None,
+async def list_features(status: str | None, q: str | None, feature_id: str | None, tool: str | None,
                         page: int, size: int):
-    """分页查询，q 匹配特征 ID、显示名称或描述，tool_type 按机台类型过滤；按特征 ID、版本号降序。返回 (rows, total)。"""
+    """分页查询，q 匹配特征 ID、显示名称或描述，tool 按关联机台过滤；按特征 ID、版本号降序。返回 (rows, total)。"""
     cond = []
     if status:
         cond.append(Feature.status == status)
     if feature_id:
         cond.append(Feature.feature_id == feature_id)
-    if tool_type:
-        cond.append(FeatureMeta.tool_type == tool_type)
     if q:
         like = f"%{q}%"
         cond.append(or_(Feature.feature_id.ilike(like), FeatureMeta.name.ilike(like),
                         Feature.spec["desc"].astext.ilike(like)))
-    base = select(Feature).outerjoin(FeatureMeta, FeatureMeta.feature_id == Feature.feature_id).where(*cond)
     async with db.session() as s:
+        tools = await meta.feature_tools(s)
+        if tool:
+            cond.append(Feature.feature_id.in_([fid for fid, ts in tools.items() if tool in ts]))
+        base = select(Feature).outerjoin(FeatureMeta, FeatureMeta.feature_id == Feature.feature_id).where(*cond)
         total = await s.scalar(select(func.count()).select_from(base.subquery()))
         rows = (
             await s.execute(
@@ -71,7 +72,7 @@ async def list_features(status: str | None, q: str | None, feature_id: str | Non
                 .offset((page - 1) * size).limit(size)
             )
         ).scalars().all()
-        await meta.attach_features(s, rows)
+        await meta.attach_features(s, rows, tools)
     return rows, total
 
 

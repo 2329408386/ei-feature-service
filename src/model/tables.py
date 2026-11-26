@@ -39,9 +39,9 @@ class _Reviewed:
 class Feature(_Reviewed, Base):
     __tablename__ = "feature"
 
-    # 不映射的属性：由 service.meta.attach 从 feature_meta 填入
+    # 不映射的属性：display_name 由 service.meta 从 feature_meta 填入；tools 由生效绑定的 recipe 经 GDE 反查得出
     display_name = None
-    tool_type = None
+    tools = None
 
     feature_id: Mapped[str] = mapped_column(Text, primary_key=True)
     version: Mapped[str] = mapped_column(Text, primary_key=True)
@@ -75,7 +75,6 @@ class FeatureMeta(Base):
 
     feature_id: Mapped[str] = mapped_column(Text, primary_key=True)
     name: Mapped[str | None]
-    tool_type: Mapped[str | None]
     updated_by: Mapped[str]
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

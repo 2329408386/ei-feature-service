@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
-"""调度：以 recipe 为键，展示订阅状态、绑定的算子、跑过该 recipe 的机台 / 腔室和处理进度；暂停 / 恢复订阅。
+"""调度：订阅状态、绑定的算子、跑过该 recipe 的机台 / 腔室和处理进度；暂停 / 恢复订阅。
+
+两种视图：list_schedules 以 recipe 为键；schedule_tree 为 特征 → 算子 → recipe → 机台 / 腔室（调度页使用）。
 
 订阅状态以 GDE 为准；机台 / 腔室由 GDE 按 recipe 反查（GDE 自动推送这些腔室的执行，新增腔室也会出现）。
 """
@@ -10,7 +12,7 @@ import asyncio
 
 from sqlalchemy import func, or_, select
 
-from src.model.tables import BindingItem, FeatureBatch, FeatureValue, RecipeSubscription, op_ref
+from src.model.tables import BindingItem, FeatureBatch, FeatureMeta, FeatureValue, OperatorMeta, RecipeSubscription, op_ref
 from src.service.binding import _gde
 from src.service.subscription import active_items
 from src.util import db
@@ -79,6 +81,37 @@ async def list_schedules(recipe: str | None = None, tool: str | None = None,
             ],
             "progress": max(times) if times else None,
         })
+    return out
+
+
+async def schedule_tree(feature_id: str | None = None, recipe: str | None = None, tool: str | None = None,
+                        chamber: str | None = None) -> list[dict]:
+    """特征 → 算子（生效绑定的版本）→ recipe（订阅状态、进度）→ 机台 / 腔室。筛选条件同 list_schedules，另可按特征过滤。"""
+    rows = {r["recipe"]: r for r in await list_schedules(recipe, tool, chamber)}
+    q = active_items(BindingItem.feature_id, BindingItem.operator, BindingItem.version, BindingItem.recipe) \
+        .where(BindingItem.recipe.in_(list(rows)))
+    if feature_id:
+        q = q.where(BindingItem.feature_id == feature_id)
+    async with db.session() as s:
+        items = (await s.execute(q)).tuples().all()
+        fids = {i[0] for i in items}
+        fnames = dict((await s.execute(
+            select(FeatureMeta.feature_id, FeatureMeta.name).where(FeatureMeta.feature_id.in_(fids)))).tuples().all())
+        onames = {(f, o): n for f, o, n in (await s.execute(
+            select(OperatorMeta.feature_id, OperatorMeta.operator, OperatorMeta.name)
+            .where(OperatorMeta.feature_id.in_(fids)))).tuples().all()}
+    tree: dict[str, dict[tuple[str, int], list[str]]] = {}
+    for fid, op, ver, rcp in items:
+        tree.setdefault(fid, {}).setdefault((op, ver), []).append(rcp)
+    out = []
+    for fid in sorted(tree):
+        ops = []
+        for (op, ver), rcps in sorted(tree[fid].items()):
+            ops.append({
+                "operator": op, "version": ver, "ref": op_ref(fid, op, ver), "name": onames.get((fid, op)),
+                "recipes": [{k: v for k, v in rows[r].items() if k != "operators"} for r in sorted(rcps)],
+            })
+        out.append({"feature_id": fid, "name": fnames.get(fid), "operators": ops})
     return out
 
 

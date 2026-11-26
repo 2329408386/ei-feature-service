@@ -132,7 +132,7 @@ class FeatureOut(_Reviewed):
     feature_id: str
     version: str
     display_name: str | None = None  # 可修改的显示名称（feature_meta），未设置为 null
-    tool_type: str | None = None  # 机台类型（feature_meta）
+    tools: list[str] = []  # 关联的机台：该特征生效绑定的 recipe 经 GDE 反查到的机台（去重排序）
 
     @computed_field
     def unit(self) -> str | None:
@@ -146,16 +146,14 @@ class FeatureDetail(FeatureOut):
 
 
 class FeatureMetaIn(BaseModel):
-    """修改特征的显示名称 / 机台类型：只改传入的字段，传 null 或空串表示清空。ID 不变，不需要评审。"""
+    """修改特征的显示名称；传 null 或空串表示清空。ID 不变，不需要评审。"""
 
     name: str | None = Field(default=None, max_length=64)
-    tool_type: str | None = Field(default=None, max_length=32)
 
 
 class FeatureMetaOut(BaseModel):
     feature_id: str
     name: str | None
-    tool_type: str | None
 
 
 class OperatorMetaIn(BaseModel):
@@ -268,8 +266,8 @@ class ScheduleChamber(BaseModel):
     progress: datetime | None  # 该腔室实时计算到的最新执行结束时间
 
 
-class ScheduleOut(BaseModel):
-    """调度页一行：一个 recipe 及其下的机台 / 腔室和算子。"""
+class ScheduleRecipe(BaseModel):
+    """一个 recipe 的订阅状态及其下的机台 / 腔室。"""
 
     recipe: str
     gde_sub_id: str | None
@@ -277,9 +275,30 @@ class ScheduleOut(BaseModel):
     synced: bool  # GDE 订阅是否与 wanted 一致
     last_error: str | None
     status: Literal["running", "paused", "cancelled", "unknown"]
-    operators: list[str]  # 生效绑定中的算子引用
     chambers: list[ScheduleChamber] | None  # 跑过该 recipe 的机台 / 腔室（GDE 反查）；GDE 不可用时为 null
     progress: datetime | None
+
+
+class ScheduleOut(ScheduleRecipe):
+    """以 recipe 为键的一行，附带绑定了它的算子。"""
+
+    operators: list[str]  # 生效绑定中的算子引用
+
+
+class ScheduleOperator(BaseModel):
+    operator: str
+    version: int  # 生效绑定中的算子版本
+    ref: str
+    name: str | None  # 算子显示名称
+    recipes: list[ScheduleRecipe]
+
+
+class ScheduleTreeOut(BaseModel):
+    """调度页树形视图：特征 → 算子 → recipe → 机台 / 腔室。"""
+
+    feature_id: str
+    name: str | None  # 特征显示名称
+    operators: list[ScheduleOperator]
 
 
 class BatchIn(BaseModel):

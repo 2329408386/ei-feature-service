@@ -270,8 +270,11 @@ class FakeGdeClient:
                 raise GdeUnavailable("fake: 模拟 GDE 不可用")
 
     def _sub(self, sub_id) -> dict:
+        # 假数据只在内存里，服务重启后丢失；库里留下的 gde-sub-* 视为仍在运行，避免调度页显示“未知”
         if sub_id not in self.subs:
-            raise GdeNotFound(f"订阅 {sub_id} 不存在")
+            if not str(sub_id).startswith("gde-sub-"):
+                raise GdeNotFound(f"订阅 {sub_id} 不存在")
+            self.subs[sub_id] = {"recipe": None, "status": "running"}
         return self.subs[sub_id]
 
     def _make_run(self, run_id: str, chamber: str, end_at: datetime) -> Run:

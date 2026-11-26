@@ -73,6 +73,7 @@ MAX_DELIVERIES = 3  # 一条消息最多投递次数
 BREAKER_FAILURES = 5  # 连续多少次 GDE 不可用后熔断
 BREAKER_PAUSE_S = 60  # 熔断持续秒数
 
+RECIPE_CHAMBERS_TTL_S = 60  # 特征页 / 调度页缓存 GDE recipe 反查结果的秒数
 BATCH_MAX_DAYS = 31  # 补算 / 重算单次最大天数
 TZ = "Asia/Shanghai"  # 日期参数、实时批次整点所用时区
 PACKAGE_CACHE_DIR = Path("/tmp/ei-feature/pkgs")

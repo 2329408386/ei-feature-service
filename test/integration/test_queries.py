@@ -319,25 +319,43 @@ async def test_operator_list_and_detail(client):
     err(await client.get(O + "/x"), 422, "VALIDATION_ERROR")
 
 
-# ---------------------------------------------------------------- 名称与机台类型
+# ---------------------------------------------------------------- 名称与关联机台
 async def test_feature_meta(client):
     err(await client.patch("/api/features/gas_flow_diffmean", json={"name": "气体偏差"}), 401, "UNAUTHENTICATED")
     err(await client.patch("/api/features/nope_feature", json={"name": "x"}, headers=ALICE), 404, "NOT_FOUND")
-    out = ok(await client.patch("/api/features/gas_flow_diffmean", json={"name": " 气体偏差 ", "tool_type": "ETCH"},
-                                headers=ALICE))
-    assert out == {"feature_id": "gas_flow_diffmean", "name": "气体偏差", "tool_type": "ETCH"}
-    # 只改传入的字段
-    out = ok(await client.patch("/api/features/gas_flow_diffmean", json={"name": "气体流量偏差"}, headers=BOB))
-    assert out["tool_type"] == "ETCH"
+    out = ok(await client.patch("/api/features/gas_flow_diffmean", json={"name": " 气体流量偏差 "}, headers=ALICE))
+    assert out == {"feature_id": "gas_flow_diffmean", "name": "气体流量偏差"}
     detail = ok(await client.get(F))
-    assert (detail["feature_id"], detail["display_name"], detail["tool_type"]) == (
-        "gas_flow_diffmean", "气体流量偏差", "ETCH")
-    assert ok(await client.get("/api/features/tool-types")) == ["ETCH"]
-    assert ok(await client.get("/api/features", params={"tool_type": "ETCH"}))["total"] == 1
-    assert ok(await client.get("/api/features", params={"tool_type": "CVD"}))["total"] == 0
+    assert (detail["feature_id"], detail["display_name"]) == ("gas_flow_diffmean", "气体流量偏差")
     assert ok(await client.get("/api/features", params={"q": "流量偏差"}))["total"] == 1
+    out = ok(await client.patch("/api/features/gas_flow_diffmean", json={"name": ""}, headers=ALICE))
+    assert out["name"] is None
+    ok(await client.patch("/api/features/gas_flow_diffmean", json={"name": "气体流量偏差"}, headers=ALICE))
     err(await client.patch("/api/features/gas_flow_diffmean", json={"name": "x" * 65}, headers=ALICE),
         422, "VALIDATION_ERROR")
+
+
+async def test_feature_tools(client):
+    """关联机台 = 生效绑定的 recipe 经 GDE 反查到的机台：diffmean 生效于 RCP-0432 → ETCH-01；
+    diffmax 的 RCP-1107（ETCH-02）还在待审核，不计入。"""
+    assert ok(await client.get(F))["tools"] == ["ETCH-01"]
+    assert ok(await client.get("/api/features"))["items"][0]["tools"] == ["ETCH-01"]
+    assert ok(await client.get("/api/features/tools")) == ["ETCH-01"]
+    assert ok(await client.get("/api/features", params={"tool": "ETCH-01"}))["total"] == 1
+    assert ok(await client.get("/api/features", params={"tool": "ETCH-02"}))["total"] == 0
+
+
+async def test_schedule_tree(client):
+    tree = ok(await client.get("/api/schedules/tree"))
+    assert [(f["feature_id"], f["name"]) for f in tree] == [("gas_flow_diffmean", "气体流量偏差")]
+    (op,) = tree[0]["operators"]
+    assert (op["operator"], op["version"], op["ref"]) == ("diffmean", 1, f"{REF}")
+    (rcp,) = op["recipes"]
+    assert rcp["recipe"] == "RCP-0432" and rcp["wanted"] is True and "operators" not in rcp
+    assert {(c["tool"], c["chamber"]) for c in rcp["chambers"]} == {("ETCH-01", "CH-A01"), ("ETCH-01", "CH-A02")}
+    assert ok(await client.get("/api/schedules/tree", params={"chamber": "CH-B02"})) == []
+    assert ok(await client.get("/api/schedules/tree", params={"feature_id": "nope"})) == []
+    assert len(ok(await client.get("/api/schedules/tree", params={"tool": "ETCH-01"}))) == 1
 
 
 async def test_operator_meta(client):

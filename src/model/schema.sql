@@ -63,15 +63,15 @@ CREATE TABLE IF NOT EXISTS operator (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS operator_code_file ON operator (feature_id, code_file);
 
--- 特征的可修改信息：显示名称、机台类型。按 feature_id 保存（与版本无关），修改不需要评审；ID 永远不变。
+-- 特征的显示名称：按 feature_id 保存（与版本无关），修改不需要评审；ID 永远不变。
+-- 特征关联的机台不存表：由生效绑定的 recipe 经 GDE 反查得出。
 CREATE TABLE IF NOT EXISTS feature_meta (
   feature_id TEXT        PRIMARY KEY,
   name       TEXT,                                  -- 显示名称；为空时页面显示 feature_id
-  tool_type  TEXT,                                  -- 机台类型（如 ETCH、CVD），特征页按它筛选
   updated_by TEXT        NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS feature_meta_tool_type ON feature_meta (tool_type);
+ALTER TABLE feature_meta DROP COLUMN IF EXISTS tool_type;  -- 旧版手填的机台类型，已改为按 recipe 推导
 
 -- 算子的显示名称：按 (feature_id, 算子名) 保存，与版本无关；算子名（引用里的 operator）不变。
 CREATE TABLE IF NOT EXISTS operator_meta (

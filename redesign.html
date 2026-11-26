@@ -632,7 +632,7 @@ body.present .page { font-size: 1.06rem; }
 
   <div class="mod-grid">
     <div><b>特征管理</b><span>特征和算子直接填 JSON / 代码，自动检查、评审发布、下线；特征里可随时新增算子，同名算子自动升版本</span></div>
-    <div><b>算子绑定</b><span>只选 recipe（不选机台 / 腔室）：GDE 按 recipe 推送全部腔室的执行；可导入导出；审核通过后生效，保存全部修订</span></div>
+    <div><b>算子绑定</b><span>按 fleet → 腔室 → recipe 选择，只绑 recipe（选好后不再反查勾选机台 / 腔室）：GDE 按 recipe 推送全部腔室的执行；可导入导出；审核通过后生效，保存全部修订</span></div>
     <div><b>调度管理</b><span>绑定审核通过后经 SDK 注册订阅；监听 Redis 通知并分发计算；补算、重算</span></div>
     <div><b>计算引擎</b><span>调用 fetch(run_id) 经 SDK 取数、compute(data) 计算，结果写入 PostgreSQL；支持单次试跑</span></div>
   </div>
@@ -671,7 +671,7 @@ body.present .page { font-size: 1.06rem; }
     <circle cx="636" cy="60" r="17" fill="url(#gOrange)"/><text x="636" y="65" font-size="14" text-anchor="middle" fill="#fff" font-weight="700">3</text>
     <text x="664" y="58" font-size="15.5" font-weight="700" fill="#1D2433">配置算子绑定</text>
     <rect x="664" y="66" width="99" height="19" rx="9.5" fill="#F1EDFF"/><text x="714" y="79" font-size="11" text-anchor="middle" fill="#7C5CFF">工程师 / Agent</text>
-    <text x="622" y="120" font-size="12.5" fill="#5D6880">选 recipe（不选腔室），</text>
+    <text x="622" y="120" font-size="12.5" fill="#5D6880">fleet → 腔室 → recipe，</text>
     <text x="622" y="141" font-size="12.5" fill="#5D6880">提交审核</text>
     <rect x="618" y="154" width="224" height="24" rx="12" fill="#E6F8F0"/><text x="632" y="170" font-size="11.5" fill="#22A87E">通过后按 recipe 订阅 GDE</text>
 
@@ -709,7 +709,7 @@ body.present .page { font-size: 1.06rem; }
   </div>
 
   <h3>控制台</h3>
-  <p class="muted">可交互的原型。「算子绑定」页已按新交互实现（recipe 模糊选择，反查的机台 / 腔室只读展示）；「特征」「调度」「结果」页为简化演示，表格里一行代表一个可计算的版本，特征 + 算子的完整页面结构、接口和字段以第 4 页第 5、11 节为准。</p>
+  <p class="muted">可交互的原型。「算子绑定」页演示只绑 recipe（真实页面另有 fleet → 腔室 的候选筛选，见第 4 页第 11 节）；「特征」「调度」「结果」页为简化演示，表格里一行代表一个可计算的版本，特征 + 算子的完整页面结构、接口和字段以第 4 页第 5、11 节为准。</p>
   <div class="demo" id="demo">
     <div class="demo-bar">
       <span class="dot" style="background:#FF8FA3"></span><span class="dot" style="background:#FFC98A"></span><span class="dot" style="background:#74E3BC"></span>
@@ -778,8 +778,8 @@ body.present .page { font-size: 1.06rem; }
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/features</code></td><td>新增特征（直接提交 feature.json），自动检查通过后生成草稿</td></tr>
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/features/{id}/{version}/submit</code>、<code>/review</code></td><td>特征提交评审 / 评审（不需要试跑）；新版本发布时旧版本自动下线</td></tr>
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/features/{id}/{version}/retire</code></td><td>整个特征下线：已发布的算子一起下线并移出绑定，历史值保留</td></tr>
-  <tr><td><span class="method m-get">GET</span></td><td><code>/api/features</code>、<code>/api/features/{id}/{version}</code></td><td>特征列表（可按机台类型筛选）/ 详情（含该特征的全部算子）</td></tr>
-  <tr><td><span class="method m-patch">PATCH</span></td><td><code>/api/features/{id}</code>、<code>/api/operators/{fid}/{name}</code></td><td>修改特征的名称、机台类型 / 算子的名称；ID 不变，对全部版本生效，不需要评审</td></tr>
+  <tr><td><span class="method m-get">GET</span></td><td><code>/api/features</code>、<code>/api/features/{id}/{version}</code></td><td>特征列表（可按关联机台筛选）/ 详情（含该特征的全部算子和关联机台）</td></tr>
+  <tr><td><span class="method m-patch">PATCH</span></td><td><code>/api/features/{id}</code>、<code>/api/operators/{fid}/{name}</code></td><td>修改特征 / 算子的显示名称；ID 不变，对全部版本生效，不需要评审</td></tr>
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/operators</code></td><td>在特征下新增算子（operator.json + 代码 + 可选文件名）；同名算子再次提交自动升版本，特征版本不变</td></tr>
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/operators/{fid}/{name}/{ver}/submit</code>、<code>/review</code></td><td>算子提交评审 / 评审（通过前至少试跑 1 个 run_id）</td></tr>
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/operators/{fid}/{name}/{ver}/trial</code></td><td>试跑：传 <code>run_id</code>，执行一次 fetch + compute，返回数据概要和结果；不写入特征值</td></tr>
@@ -797,7 +797,7 @@ body.present .page { font-size: 1.06rem; }
   <tr><td><span class="method m-get">GET</span></td><td><code>/api/values</code></td><td>按算子引用，以及机台、腔室、recipe、晶圆、时间查询特征值</td></tr>
   <tr><td><span class="method m-get">GET</span></td><td><code>/api/batches</code>、<code>/api/batches/{batch_id}</code></td><td>批次列表 / 某个计算批次的来源信息</td></tr>
   <tr><td><span class="method m-post">POST</span></td><td><code>/api/batches/{batch_id}/cancel</code></td><td>取消排队中或进行中的补算、重算</td></tr>
-  <tr><td><span class="method m-get">GET</span></td><td><code>/api/schedules</code></td><td>以 recipe 为键：订阅状态、同步状态、绑定的算子、跑过它的机台 / 腔室及各自处理进度</td></tr>
+  <tr><td><span class="method m-get">GET</span></td><td><code>/api/schedules</code></td><td>以 recipe 为键：订阅状态、同步状态、绑定的算子、跑过它的机台 / 腔室及各自处理进度；<code>/tree</code> 为 特征 → 算子 → recipe → 机台 / 腔室 的树（调度页使用）</td></tr>
   <tr><td><span class="method m-mq">REDIS</span></td><td><code>gde:run:done</code></td><td>计算引擎以消费组监听的执行结束通知：含 run_id、机台、腔室、配方、晶圆、结束时间，不含数据</td></tr>
   </table>
   </div>
@@ -1021,7 +1021,8 @@ uv run pytest     <span class="c"># 测试</span></code></pre>
 <span class="k">class</span> Feature(Reviewed):
     feature_id: str; version: str         <span class="c"># 语义化版本 1.0.0；feature_id 永远不变</span>
     unit: str?                            <span class="c"># 取自 spec.output.unit</span>
-    display_name: str?; tool_type: str?   <span class="c"># 取自 feature_meta：可修改的名称、机台类型（与版本无关）</span>
+    display_name: str?                    <span class="c"># 取自 feature_meta：可修改的名称（与版本无关）</span>
+    tools: list[str]                      <span class="c"># 关联机台：各算子生效绑定的 recipe 经 GDE 反查到的机台（去重排序），不手填</span>
 
 <span class="k">class</span> Operator(Reviewed):
     feature_id: str; name: str; version: int     <span class="c"># name 是 ID 的一部分，不可修改；同名算子再次提交时 +1</span>
@@ -1063,9 +1064,9 @@ uv run pytest     <span class="c"># 测试</span></code></pre>
   <div class="table-wrap"><table>
     <tr><th>接口</th><th>请求</th><th>响应与规则</th></tr>
     <tr><td><span class="method m-post">POST</span> <code>/api/features</code></td><td>body 即 feature.json：<code>{"id", "version", "desc", "output": {"unit"}?}</code></td><td>201 <code>Feature</code>（draft，created_by=X-User）。按第 7 节校验；(id, version) 已存在 → <code>VERSION_EXISTS</code>；不大于已有最大版本 → <code>VERSION_NOT_INCREASING</code>。</td></tr>
-    <tr><td><span class="method m-get">GET</span> <code>/api/features</code></td><td><code>status?</code> <code>q?</code>（匹配 id、名称或 desc，ILIKE）<code>feature_id?</code> <code>tool_type?</code>（机台类型，精确匹配）<code>page</code> <code>page_size</code></td><td>列表 <code>Feature</code>，按 feature_id、版本（语义化排序）降序。</td></tr>
-    <tr><td><span class="method m-get">GET</span> <code>/api/features/tool-types</code></td><td>—</td><td><code>[str]</code>：feature_meta 中用过的机台类型（去重排序），供筛选下拉框。</td></tr>
-    <tr><td><span class="method m-patch">PATCH</span> <code>/api/features/{id}</code></td><td><code>{"name"?: str, "tool_type"?: str}</code>（各 ≤ 64 / 32 字；null 或空串表示清空）</td><td><code>{"feature_id", "name", "tool_type"}</code>。只改传入的字段，写 feature_meta（不存在则插入）；feature_id 不存在 → 404。<b>ID 不变、对全部版本生效、不需要评审</b>。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/features</code></td><td><code>status?</code> <code>q?</code>（匹配 id、名称或 desc，ILIKE）<code>feature_id?</code> <code>tool?</code>（关联机台，精确匹配）<code>page</code> <code>page_size</code></td><td>列表 <code>Feature</code>，按 feature_id、版本（语义化排序）降序。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/features/tools</code></td><td>—</td><td><code>[str]</code>：所有特征的关联机台（去重排序），供筛选下拉框。</td></tr>
+    <tr><td><span class="method m-patch">PATCH</span> <code>/api/features/{id}</code></td><td><code>{"name": str?}</code>（≤ 64 字；null 或空串表示清空）</td><td><code>{"feature_id", "name"}</code>。写 feature_meta（不存在则插入）；feature_id 不存在 → 404。<b>ID 不变、对全部版本生效、不需要评审</b>。</td></tr>
     <tr><td><span class="method m-get">GET</span> <code>/api/features/{id}/{version}</code></td><td>—</td><td><code>Feature</code> + <code>operators: [Operator]</code>（该 feature_id 下全部算子、全部版本，按名称、版本降序）。</td></tr>
     <tr><td><span class="method m-post">DELETE</span> <code>/api/features/{id}/{version}</code></td><td>—</td><td>204。仅 draft、仅 created_by 本人。</td></tr>
     <tr><td><span class="method m-post">POST</span> <code>…/{version}/submit</code></td><td>—</td><td>仅 draft、仅本人 → review。</td></tr>
@@ -1094,6 +1095,7 @@ uv run pytest     <span class="c"># 测试</span></code></pre>
     <tr><td><span class="method m-get">GET</span> <code>/api/bindings/export</code></td><td>同列表筛选参数</td><td>下载文件 <code>ei-feature-service-bindings.json</code>：<code>{"format": "ei-feature-service.bindings/v3", "exported_at", "bindings": [BindingSpec + "revision"]}</code>，只含生效且非空的修订。</td></tr>
     <tr><td><span class="method m-post">POST</span> <code>/api/bindings/import</code></td><td><code>dry_run</code>（默认 true）；body 为导出格式</td><td><code>{"items": [{"feature_id","operator","action": "new"|"skip"|"conflict"|"error","message","revision"?,"errors"?}]}</code>。每个算子独立按“绑定校验”：有待审核 → conflict；与生效修订一致 → skip；文件内同一算子重复 → error。<code>dry_run=false</code> 时在一个事务里为所有 new 插入 pending 修订（source=import）。</td></tr>
     <tr><td><span class="method m-get">GET</span> <code>/api/schedules</code></td><td><code>recipe?</code>（模糊）<code>tool?</code> <code>chamber?</code></td><td>以 recipe 为键：<code>[{"recipe","gde_sub_id","wanted","synced","last_error","status": "running"|"paused"|"cancelled"|"unknown","operators": [算子引用],"chambers": [{"tool","chamber","progress"?}]?,"progress"?}]</code>，来自 <code>recipe_subscription</code>（只列需要订阅或仍有订阅的 recipe）。status 经 SDK 查询（失败时 unknown）；synced = (wanted 与是否有 gde_sub_id 一致)；operators 为生效绑定中含该 recipe 的算子；chambers 经 SDK <code>recipe_chambers</code> 反查（失败时 null），progress 为该 recipe 在该腔室 live 批次中最大的 run_end_at；tool / chamber 按反查结果过滤。</td></tr>
+    <tr><td><span class="method m-get">GET</span> <code>/api/schedules/tree</code></td><td><code>feature_id?</code> <code>recipe?</code> <code>tool?</code> <code>chamber?</code></td><td>调度页用的树：<code>[{"feature_id","name","operators": [{"operator","version","ref","name","recipes": [ScheduleRecipe]}]}]</code>。ScheduleRecipe 为上一行去掉 operators 的对象（含 chambers）。只含生效绑定，按 feature_id、算子名、recipe 排序；筛选条件同上，另可按特征。暂停 / 补算仍以 recipe 为单位，同一 recipe 会出现在绑定它的每个算子下。</td></tr>
     <tr><td><span class="method m-post">POST</span> <code>/api/schedules/{recipe}/pause</code>、<code>/resume</code></td><td>—</td><td>调 SDK 暂停 / 恢复该 recipe 的 gde_sub_id。没有该 recipe 的订阅行 → 404；无订阅 → 409 <code>INVALID_STATE</code>。</td></tr>
     <tr><td><span class="method m-post">POST</span> <code>/api/batches</code></td><td><code>{"recipe", "mode": "fill"|"overwrite", "operators": [算子引用], "from", "to", "reason"}</code></td><td>201 <code>Batch</code>（queued）。recipe 没有任何生效绑定 → 409 <code>INVALID_STATE</code>（status=none）；operators 必须都在该 recipe 的生效绑定中；from ≤ to ≤ 今天；天数 ≤ <code>BATCH_MAX_DAYS</code>；reason 必填。执行时经 SDK 拉该 recipe 在全部腔室上的执行。</td></tr>
     <tr><td><span class="method m-get">GET</span> <code>/api/batches</code>、<code>/api/batches/{id}</code></td><td><code>recipe?</code> <code>mode?</code> <code>status?</code></td><td>列表按 batch_id 降序 / 单个 <code>Batch</code>。</td></tr>
@@ -1156,7 +1158,7 @@ active  --新修订生效----------------&gt; superseded
     <li>提交后执行“订阅同步”（没有算子要算的 recipe 会被取消订阅）。</li>
   </ol>
 
-  <p><strong>名称与机台类型</strong>（<code>src/service/meta.py</code>）：ID（feature_id、算子名）永远不变，引用、绑定、特征值都按 ID。可修改的显示名称和机台类型存在 <code>feature_meta</code>（按 feature_id）、<code>operator_meta</code>（按 feature_id + 算子名），与版本无关、修改不需要评审；不写进 feature.json / operator.json。列表和详情接口把它们填进 <code>display_name</code> / <code>tool_type</code>，关键字搜索也匹配显示名称。</p>
+  <p><strong>名称与关联机台</strong>（<code>src/service/meta.py</code>）：ID（feature_id、算子名）永远不变，引用、绑定、特征值都按 ID。可修改的显示名称存在 <code>feature_meta</code>（按 feature_id）、<code>operator_meta</code>（按 feature_id + 算子名），与版本无关、修改不需要评审；不写进 feature.json / operator.json。特征的<b>关联机台不手填</b>：取该特征各算子生效修订的 recipe，经 SDK <code>recipe_chambers</code> 反查得到的机台去重排序（结果按 recipe 缓存 <code>RECIPE_CHAMBERS_TTL_S</code>=60 秒，GDE 不可用时该 recipe 不计入）。列表和详情接口把它们填进 <code>display_name</code> / <code>tools</code>，关键字搜索也匹配显示名称，<code>tool</code> 参数按关联机台过滤。</p>
 
   <h3>7. 特征、算子与运行库 eifeature</h3>
   <p><strong>提交校验</strong>（<code>src/service/package.py</code>，全部错误一次返回，错误码 <code>SPEC_INVALID</code>）：</p>
@@ -1218,7 +1220,8 @@ active  --新修订生效----------------&gt; superseded
 
 <span class="c"># 所有方法失败时抛 GdeUnavailable（网络、5xx、超时）或 GdeNotFound（run / 信号 / fleet / 腔室 / recipe 不存在）。</span>
 <span class="c"># SDK 是同步库：在 async 代码中通过 asyncio.to_thread 调用。</span>
-<span class="c"># FakeGdeClient：FLEET-ETCH-A = ETCH-01（CH-A01、CH-A02），FLEET-ETCH-B = ETCH-02（CH-B02）；元数据不区分时间范围，list_runs 不返回晚于当前时间的执行。</span></code></pre>
+<span class="c"># FakeGdeClient：FLEET-ETCH-A = ETCH-01（CH-A01、CH-A02），FLEET-ETCH-B = ETCH-02（CH-B02）；元数据不区分时间范围，list_runs 不返回晚于当前时间的执行；</span>
+<span class="c"># 订阅只在内存里，服务重启后库里遗留的 gde-sub-* 视为 running。</span></code></pre>
 
   <h3>9. 计算引擎</h3>
 <div class="file">RunResult（沙箱返回）与原因码映射</div>
@@ -1292,14 +1295,16 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
   <h3>11. 前端（单独仓库）</h3>
   <div class="table-wrap"><table class="nowrap-first">
     <tr><th>路由</th><th>页面内容</th><th>调用</th></tr>
-    <tr><td><code>/features</code></td><td>筛选栏（<b>机台类型</b>、状态、关键字）+ 特征表格（特征名称与 ID、机台类型、版本、说明、算子数、状态、提交人、评审人、操作），展开一行显示该特征的算子表（算子名称与 ID、版本、文件、状态、操作）。特征、算子名称旁有编辑按钮：修改名称（特征还可改机台类型），ID 不变、不需要评审；新增特征 / 新算子时也可顺带填写。操作：新增特征（表单直接填 feature.json）、<b>新增算子</b>（填 operator.json、粘贴或编辑代码，可选填 py 文件名，不填显示默认 <code>{name}_v{n}.py</code>；同名算子自动成为新版本）、提交评审、评审、下线、试跑（算子）。<b>试跑</b>的 run_id 可直接输入，也可逐级选：时间范围 + fleet → 腔室（<code>fleets/{fleet}/chambers</code>）→ recipe（<code>chambers/{chamber}/recipes</code>）→ 执行列表（<code>runs</code>），点一行即填入。特征评审：描述 + 意见；算子评审：描述、代码（只读高亮）、试跑框、评审清单、意见。</td><td>features、operators 全部接口</td></tr>
-    <tr><td><code>/bindings</code></td><td>左侧算子列表（显示名称，可按特征、算子、recipe、状态筛选）；右侧编辑所选算子的绑定，两步：<br>① <b>选 recipe</b>：下拉框，候选来自 <code>/api/gde/recipes</code>，输入关键字时自动过滤（<code>q</code> 参数，防抖 300 ms），点击候选项即加入“已绑定 recipe”列表，可移除。<b>不选机台 / 腔室</b>：每个 recipe 调 <code>/api/gde/recipes/{recipe}/chambers</code>，只读显示“GDE 当前有 N 台机台、M 个腔室跑过”，可展开按机台分组查看；审核通过后按 recipe 订阅 GDE，以后新增的腔室也会自动推送计算；<br>② 选算子版本（默认最新已发布版本），实时生成的绑定 JSON，历史修订与对比，提交审核 / 撤销修改。另有导入、导出。</td><td>bindings 全部接口；<code>/api/gde/*</code></td></tr>
-    <tr><td><code>/schedules</code></td><td><b>以 recipe 为键</b>的订阅表（recipe、机台 / 腔室摘要、算子、订阅 ID、是否已同步 / 最近错误、已处理到、状态、暂停 / 恢复、补算、重算），可按 recipe、机台、腔室筛选；展开一行显示该 recipe 下的机台 / 腔室（各自已处理到）和全部算子。批次表可按 recipe、类型、状态筛选，可取消。补算 / 重算对话框按 recipe 勾选算子，覆盖该 recipe 下全部腔室。</td><td>schedules、batches</td></tr>
+    <tr><td><code>/features</code></td><td>筛选栏（<b>机台</b>、状态、关键字）+ 特征表格（特征名称与 ID、<b>计算的机台</b>（<code>tools</code>，由绑定的 recipe 推导，点一个即按它筛选；没有生效绑定显示“未绑定”）、版本、说明、算子数、状态、提交人、评审人、操作），展开一行显示该特征的算子表（算子名称与 ID、版本、文件、状态、操作）。特征、算子名称旁有编辑按钮：修改名称，ID 不变、不需要评审；新增特征 / 新算子时也可顺带填写。操作：新增特征（表单直接填 feature.json）、<b>新增算子</b>（填 operator.json、粘贴或编辑代码，可选填 py 文件名，不填显示默认 <code>{name}_v{n}.py</code>；同名算子自动成为新版本）、提交评审、评审、下线、试跑（算子）。<b>试跑</b>的 run_id 可直接输入，也可逐级选：时间范围 + fleet → 腔室（<code>fleets/{fleet}/chambers</code>）→ recipe（<code>chambers/{chamber}/recipes</code>）→ 执行列表（<code>runs</code>），点一行即填入。特征评审：描述 + 意见；算子评审：描述、代码（只读高亮）、试跑框、评审清单、意见。</td><td>features、operators 全部接口</td></tr>
+    <tr><td><code>/bindings</code></td><td>左侧算子列表（显示名称，可按特征、算子、recipe、状态筛选）；右侧编辑所选算子的绑定，三步：<br>① <b>选 fleet + 时间范围</b>（默认最近 30 天）→ <code>/api/gde/fleets/{fleet}/chambers</code>，返回的腔室按机台分组、<b>默认全部勾选</b>，可取消（机台一键全选 / 全不选）。fleet、腔室只用来缩小 recipe 候选，不写进绑定；<br>② <b>选 recipe</b>：候选为勾选腔室在时间范围内跑过的 recipe 并集（逐个调 <code>/api/gde/chambers/{chamber}/recipes</code>，前端缓存），输入关键字过滤，点击加入，也可“全部加入”；没选 fleet 时直接在 <code>/api/gde/recipes?q=</code> 中模糊搜索（防抖 300 ms）。已选 recipe 显示为可移除的标签，<b>选好后不再反查、不勾选机台 / 腔室</b>：审核通过后按 recipe 订阅 GDE，GDE 推送它关联的所有机台 / 腔室（含以后新增的）；<br>③ 选算子版本（默认最新已发布版本），实时生成的绑定 JSON，历史修订与对比，提交审核 / 撤销修改。另有导入、导出。</td><td>bindings 全部接口；<code>/api/gde/*</code></td></tr>
+    <tr><td><code>/schedules</code></td><td><b>树形表</b>（<code>/api/schedules/tree</code>）：第一层特征（名称、算子数 / recipe 数 / 机台数）→ 点开是算子（名称、生效版本、recipe 数）→ 点开是 recipe（机台 / 腔室数、订阅 ID、是否已同步 / 最近错误、已处理到、状态、暂停 / 恢复、补算、重算）→ 点开是机台 / 腔室（各自已处理到）。可按特征、recipe、机台、腔室筛选，可一键收起 / 展开到 recipe / 全部展开。暂停作用于整个 recipe（提示会影响绑定它的全部算子）。批次表可按 recipe、类型、状态筛选，可取消。补算 / 重算对话框按 recipe 勾选算子（默认只勾所在的算子），覆盖该 recipe 下全部腔室。</td><td>schedules、batches</td></tr>
     <tr><td><code>/results</code></td><td>筛选栏（<b>recipe</b>、机台、腔室、特征 → 算子、7 / 30 天；recipe、机台、腔室候选来自调度页数据，选了 recipe 后机台 / 腔室只列跑过它的）+ 折线图（ECharts；正常值、重算后的值、空值三种点）+ 点击点显示来源 + 空值原因统计。</td><td>values、batches/{id}</td></tr>
   </table></div>
   <ul>
     <li>只需配置本服务地址：GDE 元数据（fleet、腔室、recipe、执行）统一经本服务的 <code>/api/gde/*</code> 转发。所有请求带 <code>X-Client: console</code>；<code>X-User</code> 由网关注入。</li>
     <li>错误统一用 Element Plus 消息提示 <code>message</code>；<code>BINDING_INVALID</code>、<code>SPEC_INVALID</code> 的 <code>details.errors</code> 逐条显示在对应位置。</li>
+    <li>视觉：明亮留白、圆角卡片（16px）、主色 <code>#5b6cff</code> 渐变到 <code>#22c3ee</code>；顶部横向胶囊导航（特征 / 算子绑定 / 调度 / 结果），不用深色侧栏。通过覆盖 Element Plus 的 CSS 变量实现（<code>src/style.css</code>）。</li>
+    <li><b>离线演示</b>：<code>npm run snapshot</code> 从运行中的服务抓一份数据快照（<code>src/api/offline-data.json</code>，含特征、算子、绑定修订、GDE 元数据、调度树、批次、近 30 天特征值、每个算子一次试跑结果）；<code>npm run build:offline</code> 构建后把 JS、CSS 内联成单个 <code>offline/ei-feature-offline.html</code>，双击即可打开（hash 路由，不访问后端）。离线时查询接口由 <code>src/api/offline.js</code> 按参数在前端过滤分页，日期按快照时间换算；修改类接口返回 <code>OFFLINE</code> 提示，试跑返回快照里的示例结果。</li>
   </ul>
 
   <h3>12. 测试与验收</h3>
@@ -1311,7 +1316,7 @@ compute 超时 / 异常 / 非有限数 -&gt; reason = "COMPUTE_ERROR", reason_de
     <tr><td>状态机</td><td>第 6 节每条转移的允许 / 拒绝，包括本人评审 403、本人审核 403、他人撤回 403；新特征版本发布时旧版本自动下线；特征未发布时算子不能发布。</td></tr>
     <tr><td>绑定</td><td>校验各条（算子未发布、recipe 不存在 / 为空 / 重复）；approve 后按 recipe 订阅重算与同步（subscribe / cancel）；GDE 不可用时审核照样生效、后台重试后同步；导入的 new / skip / conflict / error；同一 recipe 在新腔室上的执行也会计算。</td></tr>
     <tr><td>GDE 元数据</td><td><code>/api/gde/*</code>：fleet 腔室默认时间范围、recipe 模糊过滤与 limit、recipe 反查、腔室的 recipe、执行列表（倒序、limit、限定腔室）、不存在 404。</td></tr>
-    <tr><td>名称与机台类型</td><td>PATCH 只改传入字段、清空、404；列表按 tool_type 过滤、q 匹配显示名称；tool-types 去重。</td></tr>
+    <tr><td>名称与关联机台</td><td>PATCH 改名、清空、404；q 匹配显示名称；tools 只算生效绑定（待审核的不算）、按 tool 过滤、/features/tools 去重；/schedules/tree 的层级与筛选。</td></tr>
     <tr><td>下线</td><td>算子下线生成空 system 修订、撤回 pending、取消不再需要的订阅；特征整体下线带下全部已发布算子。</td></tr>
     <tr><td>LiveConsumer</td><td>（fakeredis + FakeGdeClient）同一消息投递两次只写一次；GdeUnavailable 不 ACK、认领后重试成功；超过投递上限写 FETCH_ERROR；配方不在绑定内直接 ACK；实时批次按整点归并。</td></tr>
     <tr><td>BatchRunner</td><td>fill 跳过已有值、覆盖该 recipe 下全部腔室；overwrite 覆盖并标记旧批次 superseded_by；cancel 生效；两个实例不会领同一个批次。</td></tr>
@@ -1604,12 +1609,13 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   </svg>
   </div>
 
-  <h3>编辑区：两步选择，自动生成 JSON</h3>
+  <h3>编辑区：三步选择，自动生成 JSON</h3>
   <ol class="steps-list">
-    <li><strong>选 recipe：</strong>下拉框的候选来自 GDE 的全部 recipe；输入关键字后自动模糊过滤（如输入 <code>0432</code>），点击候选项即加入下方“已绑定 recipe”列表。可以连续添加多个，也可以移除。每个 recipe 只读显示“GDE 当前有 N 台机台、M 个腔室跑过”，可展开查看，<b>不需要勾选</b>。</li>
+    <li><strong>选 fleet、时间范围和腔室：</strong>下拉选择 fleet，时间范围默认最近 30 天。GDE 返回该 fleet 在这段时间内有执行的腔室，按机台分组，<b>默认全部勾选</b>，不需要的取消。这一步只用来缩小 recipe 的候选范围，不写进绑定。</li>
+    <li><strong>选 recipe：</strong>候选是勾选腔室跑过的 recipe；输入关键字过滤（如 <code>0432</code>），点击即加入“已绑定 recipe”，也可全部加入、逐个移除。不选 fleet 时直接在 GDE 全部 recipe 中搜索。<b>选好 recipe 后不再反查、不勾选机台 / 腔室</b>：GDE 会自动推送这个 recipe 关联的所有机台与腔室（含以后新增的）。</li>
     <li><strong>确认算子版本并提交审核：</strong>默认最新的已发布版本；查看生成的 JSON 后提交，生成待审核修订，审核通过后才开始计算。</li>
   </ol>
-  <p class="muted">recipe 的数据经本服务的 <code>/api/gde/*</code> 转发（<code>recipes?q=</code>、<code>recipes/{recipe}/chambers</code>）；提交时后端经 SDK 反查校验每个 recipe 存在。</p>
+  <p class="muted">fleet、腔室、recipe 的数据经本服务的 <code>/api/gde/*</code> 转发（<code>fleets</code>、<code>fleets/{fleet}/chambers</code>、<code>chambers/{chamber}/recipes</code>、<code>recipes?q=</code>）；提交时后端经 SDK 反查校验每个 recipe 存在。</p>
 
   <div class="file">生成的 JSON：POST /api/bindings/gas_flow_diffmean/diffmean</div>
 <pre><code>{
@@ -1891,7 +1897,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   <tr><th>表</th><th>变化</th></tr>
   <tr><td><code>feature</code></td><td>只保留元数据（feature.json），去掉 <code>package_uri</code>、<code>package_hash</code>；部分唯一索引保证同一 feature_id 只有一个已发布版本</td></tr>
   <tr><td><code>operator</code></td><td><b>新增</b>：(feature_id, name, version) 一行，version 为整数，同名再提交 +1；<code>code_file</code>（用户指定或 <code>{name}_v{version}.py</code>，同一特征内唯一）、<code>code_uri</code>、<code>code_hash</code>；评审 / 下线字段与 feature 相同</td></tr>
-  <tr><td><code>feature_meta</code> / <code>operator_meta</code></td><td><b>新增</b>：特征的显示名称、机台类型，算子的显示名称；按 ID 保存、与版本无关，修改不需要评审</td></tr>
+  <tr><td><code>feature_meta</code> / <code>operator_meta</code></td><td><b>新增</b>：特征、算子的显示名称；按 ID 保存、与版本无关，修改不需要评审。特征的关联机台不存表，由绑定的 recipe 推导</td></tr>
   <tr><td><code>operator_binding</code></td><td><b>替代 chamber_binding</b>：修订以算子为单位，spec 为 {feature_id, operator, version, recipes: [recipe]}，只绑 recipe、不选腔室；不再存订阅 ID</td></tr>
   <tr><td><code>binding_item</code></td><td>“修订 × recipe”一行，带算子 version；引擎按 recipe 查要算的算子</td></tr>
   <tr><td><code>recipe_subscription</code></td><td><b>替代 chamber_subscription / gde_outbox</b>：GDE 订阅按 recipe，GDE 推送该 recipe 在所有腔室上的执行（含新腔室）；wanted 由绑定汇总，后台对账同步</td></tr>
@@ -1906,7 +1912,7 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
   <tr><td><code>feature</code></td><td>feature.json 原文、状态、提交 / 发布 / 下线的人和时间；<code>review_log</code></td><td>进入待评审后内容锁定，只更新状态；每次评审追加一条 <code>review_log</code></td></tr>
   <tr><td><code>operator</code></td><td>operator.json 原文、代码文件名、MinIO 地址和 hash、状态；<code>review_log</code> 记录每次评审的结论、意见和试跑过的 run_id</td><td>同上；新增算子或同名算子的新版本各插入一行</td></tr>
   <tr><td><code>operator_binding</code></td><td>每个算子的每一次绑定修订（JSON 原文）、绑定的算子版本、来源、审核状态</td><td>每次提交或导入新增一行，审核时更新状态</td></tr>
-  <tr><td><code>feature_meta</code> / <code>operator_meta</code></td><td>可修改的显示名称、机台类型（特征）</td><td><code>PATCH</code> 接口直接写入（upsert），记录修改人和时间</td></tr>
+  <tr><td><code>feature_meta</code> / <code>operator_meta</code></td><td>可修改的显示名称</td><td><code>PATCH</code> 接口直接写入（upsert），记录修改人和时间</td></tr>
   <tr><td><code>binding_item</code></td><td>修订展开后的 recipe 明细</td><td>与 <code>operator_binding</code> 同一事务写入，只增不改；用于筛选、引擎按 recipe 查算子、订阅汇总</td></tr>
   <tr><td><code>recipe_subscription</code></td><td>每个 recipe 是否需要订阅（wanted）、GDE 订阅 ID、最近错误</td><td>绑定生效 / 算子下线时在同一事务里重算 wanted；同步成功后写 gde_sub_id、synced_at</td></tr>
   <tr><td><code>feature_batch</code></td><td>每个计算批次的类型、状态、recipe、算子、数据时间范围、原因、统计</td><td>每个批次一行；被重算覆盖时写入 <code>superseded_by</code></td></tr>
@@ -1977,15 +1983,15 @@ FLOW = {<span class="s">"CH-A01"</span>: <span class="s">"MFC_12_Flow_pv"</span>
 );
 <span class="k">CREATE UNIQUE INDEX</span> <span class="k">IF NOT EXISTS</span> operator_code_file <span class="k">ON</span> operator (feature_id, code_file);
 
-<span class="c">-- 特征的可修改信息：显示名称、机台类型。按 feature_id 保存（与版本无关），修改不需要评审；ID 永远不变。</span>
+<span class="c">-- 特征的显示名称：按 feature_id 保存（与版本无关），修改不需要评审；ID 永远不变。</span>
+<span class="c">-- 特征关联的机台不存表：由生效绑定的 recipe 经 GDE 反查得出。</span>
 <span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> feature_meta (
   feature_id <span class="k">TEXT</span>        <span class="k">PRIMARY KEY</span>,
   name       <span class="k">TEXT</span>,                                  <span class="c">-- 显示名称；为空时页面显示 feature_id</span>
-  tool_type  <span class="k">TEXT</span>,                                  <span class="c">-- 机台类型（如 ETCH、CVD），特征页按它筛选</span>
   updated_by <span class="k">TEXT</span>        <span class="k">NOT NULL</span>,
   updated_at <span class="k">TIMESTAMPTZ</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> now()
 );
-<span class="k">CREATE INDEX</span> <span class="k">IF NOT EXISTS</span> feature_meta_tool_type <span class="k">ON</span> feature_meta (tool_type);
+<span class="k">ALTER TABLE</span> feature_meta <span class="k">DROP COLUMN IF EXISTS</span> tool_type;  <span class="c">-- 旧版手填的机台类型，已改为按 recipe 推导</span>
 
 <span class="c">-- 算子的显示名称：按 (feature_id, 算子名) 保存，与版本无关；算子名（引用里的 operator）不变。</span>
 <span class="k">CREATE TABLE</span> <span class="k">IF NOT EXISTS</span> operator_meta (
