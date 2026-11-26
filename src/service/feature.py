@@ -58,7 +58,7 @@ async def create(spec: dict, user: str) -> Feature:
     async with db.session() as s:
         fid = spec.pop("id", None) or await _new_feature_id(s)
         spec = {"id": fid, **spec}
-        ver = spec["version"]
+        ver = spec.get("version")  # 已通过 check_feature_spec 校验，一定存在
         await db.lock(s, f"feature:{fid}")  # 同一特征的新增串行，版本判断才可靠
         versions = (await s.execute(select(Feature.version).where(Feature.feature_id == fid))).scalars().all()
         if not versions and not (name or "").strip():
@@ -217,14 +217,14 @@ async def remove(feature_id: str, version: str, user: str, dry_run: bool = False
         if last:
             ops = (await s.execute(select(Operator).where(Operator.feature_id == feature_id)
                                    .order_by(Operator.name, Operator.version).with_for_update())).scalars().all()
-            busy = [o.ref for o in ops if o.status in ("published", "review")]
+            busy = [op.ref for op in ops if op.status in ("published", "review")]
             if busy:
                 raise invalid_state(f"特征下还有已发布或待评审的算子：{'、'.join(busy)}，请先下线或退回", "busy")
         out = {"features": [f"{feature_id}@{version}"], "last_version": last, **await operator.impact(s, ops)}
         if dry_run:
             return out
         recipes = await operator.delete_in_tx(s, ops)
-        prefixes = [operator_prefix(o.feature_id, o.name, o.version) for o in ops]
+        prefixes = [operator_prefix(op.feature_id, op.name, op.version) for op in ops]
         await s.delete(row)
         await s.flush()
         if last:

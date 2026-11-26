@@ -10,13 +10,13 @@
 
 from alembic import op
 
-# 以下四个名称由 Alembic 按固定的小写名读取，不能改成大写
-# pylint: disable=invalid-name
-revision = ${repr(up_revision)}
-down_revision = ${repr(down_revision)}
-branch_labels = ${repr(branch_labels)}
-depends_on = ${repr(depends_on)}
-# pylint: enable=invalid-name
+REVISION = ${repr(up_revision)}
+DOWN_REVISION = ${repr(down_revision)}
+
+# Alembic 按固定的小写模块属性（revision / down_revision / branch_labels / depends_on）读取修订信息
+globals().update(
+    revision=REVISION, down_revision=DOWN_REVISION, branch_labels=${repr(branch_labels)}, depends_on=${repr(depends_on)}
+)
 
 
 def upgrade() -> None:

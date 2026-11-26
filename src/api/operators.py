@@ -61,7 +61,8 @@ async def get_operator(feature_id: str, name: str, version: int):
 async def delete_operator(feature_id: str, name: str, version: int, user: User, dry_run: bool = False):
     """删除算子版本：自己的草稿或已下线的；连同特征值、文件删除，最后一个版本时连同绑定修订和名称，不可恢复。
 
-    dry_run=true 只返回影响范围（200），用于弹窗警告。"""
+    dry_run=true 只返回影响范围（200），用于弹窗警告。
+    """
     out = await svc.remove(feature_id, name, version, user, dry_run)
     return out if dry_run else Response(status_code=204)
 

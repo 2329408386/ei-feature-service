@@ -67,7 +67,8 @@ async def get_feature(feature_id: str, version: str):
 async def delete_feature(feature_id: str, version: str, user: User, dry_run: bool = False):
     """删除特征版本：自己的草稿或已下线的。最后一个版本时连同全部算子、特征值、绑定修订一起删除，不可恢复。
 
-    dry_run=true 只返回影响范围（200），用于弹窗警告。"""
+    dry_run=true 只返回影响范围（200），用于弹窗警告。
+    """
     out = await svc.remove(feature_id, version, user, dry_run)
     return out if dry_run else Response(status_code=204)
 

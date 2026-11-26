@@ -10,13 +10,11 @@
 
 from alembic import op
 
-# 以下四个名称由 Alembic 按固定的小写名读取，不能改成大写
-# pylint: disable=invalid-name
-revision = "0001"
-down_revision = None
-branch_labels = None
-depends_on = None
-# pylint: enable=invalid-name
+REVISION = "0001"
+DOWN_REVISION = None
+
+# Alembic 按固定的小写模块属性（revision / down_revision / branch_labels / depends_on）读取修订信息
+globals().update(revision=REVISION, down_revision=DOWN_REVISION, branch_labels=None, depends_on=None)
 
 UPGRADE_SQL = r"""
 -- 特征：每个 (feature_id, version) 一行，只有元数据（feature.json），计算代码在算子里。

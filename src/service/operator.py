@@ -235,7 +235,8 @@ async def _gone_operators(s, rows: list[Operator]) -> set[tuple[str, str]]:
 async def delete_in_tx(s, rows: list[Operator]) -> set[str]:
     """在调用方事务里删除这些算子版本：特征值、引用它们的绑定明细、算子行。
 
-    算子一个版本都不剩时再删它的全部绑定修订和名称。返回涉及的 recipe（调用方提交后同步订阅）。"""
+    算子一个版本都不剩时再删它的全部绑定修订和名称。返回涉及的 recipe（调用方提交后同步订阅）。
+    """
     gone = await _gone_operators(s, rows)
     recipes: set[str] = set()
     for r in rows:
