@@ -6,6 +6,8 @@ ei-feature-service：特征计算服务。特征（feature.json，只有元数�
 
 `redesign.html` 是完整设计（第 4 页“实现规格”含技术栈、API schema、状态机、引擎流程），目标是让 AI 能直接按它生成代码。改代码时与设计文档保持一致；行为有变化时同步更新文档。
 
+前端是单独的仓库（设计文档第 11 节），本机在同级目录 `../ei-feature-web`（Vue 3 + Element Plus + ECharts，`npm run dev` 起在 :5173，/api 代理到 :8000）。
+
 ## 常用命令
 
 ```bash
