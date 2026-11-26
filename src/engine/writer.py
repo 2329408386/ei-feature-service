@@ -37,15 +37,15 @@ def _op_select():
     return select(Operator.feature_id, Operator.name, Operator.version, Operator.code_hash, Operator.code_file)
 
 
-async def operators_for(s, chamber: str, recipe: str) -> list[OperatorRef]:
-    """生效绑定中，该腔室的该 recipe 要计算的算子版本。"""
+async def operators_for(s, recipe: str) -> list[OperatorRef]:
+    """生效绑定中，该 recipe 要计算的算子版本（与机台 / 腔室无关）。"""
     stmt = (
         _op_select()
         .join(BindingItem, (BindingItem.feature_id == Operator.feature_id) & (BindingItem.operator == Operator.name)
               & (BindingItem.version == Operator.version))
         .join(OperatorBinding, (OperatorBinding.feature_id == BindingItem.feature_id)
               & (OperatorBinding.operator == BindingItem.operator) & (OperatorBinding.revision == BindingItem.revision))
-        .where(OperatorBinding.status == "active", BindingItem.chamber == chamber, BindingItem.recipe == recipe)
+        .where(OperatorBinding.status == "active", BindingItem.recipe == recipe)
         .order_by(Operator.feature_id, Operator.name)
     )
     return [OperatorRef(*row) for row in (await s.execute(stmt)).tuples().all()]
@@ -60,17 +60,17 @@ async def load_operators(s, keys: list[tuple[str, str, int]]) -> dict[str, Opera
     return {r.ref: r for r in refs}
 
 
-async def live_batch(s, chamber: str, end_at: datetime) -> int:
-    """取或建实时批次：键 (腔室, 执行结束时间所在整点)。"""
+async def live_batch(s, recipe: str, end_at: datetime) -> int:
+    """取或建实时批次：键 (recipe, 执行结束时间所在整点)。"""
     start = hour_floor(end_at)
     await s.execute(
         insert(FeatureBatch)
-        .values(mode="live", status="running", chamber=chamber, data_from=start,
+        .values(mode="live", status="running", recipe=recipe, data_from=start,
                 data_to=start + timedelta(hours=1), created_by=SYSTEM, started_at=now())
-        .on_conflict_do_nothing(index_elements=["chamber", "data_from"], index_where=FeatureBatch.mode == "live")
+        .on_conflict_do_nothing(index_elements=["recipe", "data_from"], index_where=FeatureBatch.mode == "live")
     )
     stmt = select(FeatureBatch.batch_id).where(
-        FeatureBatch.mode == "live", FeatureBatch.chamber == chamber, FeatureBatch.data_from == start,
+        FeatureBatch.mode == "live", FeatureBatch.recipe == recipe, FeatureBatch.data_from == start,
     )
     return await s.scalar(stmt)
 

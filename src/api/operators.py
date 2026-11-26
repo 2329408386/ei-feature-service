@@ -10,6 +10,8 @@ from fastapi import APIRouter, Query
 from src.api.schemas import (
     OperatorDetail,
     OperatorIn,
+    OperatorMetaIn,
+    OperatorMetaOut,
     OperatorOut,
     OperatorRetireOut,
     Page,
@@ -19,6 +21,7 @@ from src.api.schemas import (
     TrialIn,
     TrialOut,
 )
+from src.service import meta
 from src.service import operator as svc
 from src.util.auth import User
 
@@ -44,6 +47,12 @@ async def list_operators(
     """分页查询算子，可按特征、算子名、状态、关键字过滤。"""
     rows, total = await svc.list_operators(feature_id, name, status, q, page, page_size)
     return {"items": rows, "total": total, "page": page, "page_size": page_size}
+
+
+@router.patch("/{feature_id}/{name}", response_model=OperatorMetaOut)
+async def update_meta(feature_id: str, name: str, body: OperatorMetaIn, user: User):
+    """修改算子的显示名称。算子名（引用中的 operator）不变，对全部版本生效，不需要评审。"""
+    return await meta.set_operator(feature_id, name, body.name, user)
 
 
 @router.get(PATH, response_model=OperatorDetail)

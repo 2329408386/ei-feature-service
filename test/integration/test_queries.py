@@ -16,7 +16,7 @@ from src.util.config import BATCH_MAX_DAYS
 from src.util.stream import RunDoneStream
 from src.util.timeutil import today
 from test.conftest import load_sample
-from test.integration.test_flow import ALICE, BINDING, BOB, REF, B, F, O, chambers, err, ok, reset
+from test.integration.test_flow import ALICE, BINDING, BOB, REF, B, F, O, err, ok, reset
 
 RUNS = [  # (run_id, end_at, wafer, lot)
     ("RUN-CH-A01-202611200815", "2026-11-20T08:15:00+08:00", "W01", "L1"),
@@ -24,8 +24,7 @@ RUNS = [  # (run_id, end_at, wafer, lot)
     ("RUN-CH-A01-202611240815", "2026-11-24T08:15:00+08:00", "W03", "L2"),
 ]
 MAX = "gas_flow_diffmean/diffmax"
-BINDING_MAX = {**BINDING, "operator": "diffmax", "recipes": [
-    {"recipe": "RCP-1107", "chambers": chambers(("ETCH-02", "CH-B02"))}]}
+BINDING_MAX = {**BINDING, "operator": "diffmax", "recipes": ["RCP-1107"]}
 
 
 @pytest.fixture(scope="module")
@@ -49,7 +48,7 @@ async def _publish_operator(c: AsyncClient, spec: dict, code: str) -> None:
 
 
 async def _seed(c: AsyncClient) -> None:
-    """发布特征和两个算子 → diffmean 绑定生效（CH-A01）→ diffmax 待审核（CH-B02）→ 3 次实时计算。"""
+    """发布特征和两个算子 → diffmean 绑定生效（RCP-0432）→ diffmax 待审核（RCP-1107）→ 3 次实时计算。"""
     feature, spec, code = load_sample()
     ok(await c.post("/api/features", json=feature, headers=ALICE), 201)
     ok(await c.post(F + "/submit", headers=ALICE))
@@ -154,15 +153,12 @@ async def test_list_bindings_items(client):
         ({"feature_id": "gas_flow_diffmean"}, ["diffmax", "diffmean"]),
         ({"feature_id": "other"}, []),
         ({"operator": "diffmax"}, ["diffmax"]),
-        # tool / chamber / recipe 只看生效修订：diffmax 只有待审核，不命中
-        ({"tool": "ETCH-01"}, ["diffmean"]),
-        ({"tool": "ETCH-02"}, []),
-        ({"chamber": "CH-A01"}, ["diffmean"]),
-        ({"chamber": "CH-B02"}, []),
+        # recipe 只看生效修订：diffmax 只有待审核，不命中
         ({"recipe": "RCP-0432"}, ["diffmean"]),
+        ({"recipe": "RCP-1107"}, []),
         ({"recipe": "RCP-0433"}, []),
-        ({"recipe": "RCP-0432", "chamber": "CH-A01", "status": "active"}, ["diffmean"]),
-        ({"chamber": "CH-A01", "status": "pending"}, []),
+        ({"recipe": "RCP-0432", "status": "active"}, ["diffmean"]),
+        ({"recipe": "RCP-0432", "status": "pending"}, []),
     ],
 )
 async def test_list_bindings_filters(client, params, expected):
@@ -176,25 +172,24 @@ async def test_list_bindings_bad_status(client):
 async def test_export_only_active(client):
     doc = ok(await client.get("/api/bindings/export"))
     assert [(b["operator"], b["revision"]) for b in doc["bindings"]] == [("diffmean", 1)]
-    assert ok(await client.get("/api/bindings/export", params={"tool": "ETCH-02"}))["bindings"] == []
+    assert ok(await client.get("/api/bindings/export", params={"recipe": "RCP-1107"}))["bindings"] == []
 
 
 async def test_get_single_revision(client):
     rev = ok(await client.get(B, params={"revision": 1}))
-    assert rev["revision"] == 1 and rev["spec"]["recipes"][0]["recipe"] == "RCP-0432"
+    assert rev["revision"] == 1 and rev["spec"]["recipes"] == ["RCP-0432"]
     err(await client.get(B, params={"revision": 99}), 404, "NOT_FOUND")
 
 
 # ---------------------------------------------------------------- 导入
 async def import_(c: AsyncClient, bindings: list[dict], dry_run: bool = True) -> list[dict]:
-    doc = {"format": "ei-feature-service.bindings/v2", "bindings": bindings}
+    doc = {"format": "ei-feature-service.bindings/v3", "bindings": bindings}
     return ok(await c.post("/api/bindings/import", params={"dry_run": str(dry_run).lower()}, json=doc,
                            headers=ALICE))["items"]
 
 
 async def test_import_all_actions(client):
-    changed = {**BINDING, "revision": 99, "recipes": [
-        {"recipe": "RCP-0433", "chambers": chambers(("ETCH-01", "CH-A01"))}]}
+    changed = {**BINDING, "revision": 99, "recipes": ["RCP-0433"]}
     result = await import_(client, [
         {"feature_id": "gas_flow_diffmean"},       # 格式错误
         changed,                                    # new，提示基于旧修订
@@ -220,13 +215,13 @@ async def test_import_empty(client):
 
 
 async def test_import_bad_format(client):
-    for fmt in ("other/v1", "ei-feature-service.bindings/v1"):
+    for fmt in ("other/v1", "ei-feature-service.bindings/v2"):
         err(await client.post("/api/bindings/import", json={"format": fmt, "bindings": []}, headers=ALICE),
             422, "VALIDATION_ERROR")
 
 
 async def test_import_requires_user(client):
-    doc = {"format": "ei-feature-service.bindings/v2", "bindings": []}
+    doc = {"format": "ei-feature-service.bindings/v3", "bindings": []}
     err(await client.post("/api/bindings/import", json=doc), 401, "UNAUTHENTICATED")
 
 
@@ -246,7 +241,7 @@ async def test_binding_review_rules(client):
 # ---------------------------------------------------------------- 批次参数校验
 def batch_body(**kw) -> dict:
     day = str(today() - timedelta(days=1))
-    return {"chamber": "CH-A01", "mode": "fill", "operators": [REF], "from": day, "to": day, "reason": "补", **kw}
+    return {"recipe": "RCP-0432", "mode": "fill", "operators": [REF], "from": day, "to": day, "reason": "补", **kw}
 
 
 async def batch_errors(c: AsyncClient, body: dict) -> set[str]:
@@ -283,19 +278,19 @@ async def test_batch_operator_not_bound(client):
     out = err(await client.post("/api/batches", json=batch_body(operators=[f"{MAX}@1", "b_b/a_a@1"]), headers=ALICE),
               422, "VALIDATION_ERROR")
     assert out["details"]["errors"] == [
-        {"path": "operators", "message": f"不在腔室 CH-A01 的生效绑定中：b_b/a_a@1、{MAX}@1"}]
+        {"path": "operators", "message": f"不在 recipe RCP-0432 的生效绑定中：b_b/a_a@1、{MAX}@1"}]
 
 
-async def test_batch_chamber_without_active_binding(client):
-    out = err(await client.post("/api/batches", json=batch_body(chamber="CH-B02"), headers=ALICE), 409, "INVALID_STATE")
+async def test_batch_recipe_without_active_binding(client):
+    out = err(await client.post("/api/batches", json=batch_body(recipe="RCP-1107"), headers=ALICE), 409, "INVALID_STATE")
     assert out["details"] == {"status": "none"}
 
 
 async def test_batch_created_fields(client):
     body = batch_body(operators=[REF, REF], mode="overwrite", reason="重算")
     b = ok(await client.post("/api/batches", json=body, headers=ALICE), 201)
-    assert b["status"] == "queued" and b["mode"] == "overwrite" and b["chamber"] == "CH-A01"
-    assert b["operators"] == [REF] and b["plan"] == {"RCP-0432": [REF]} and b["created_by"] == "alice"
+    assert b["status"] == "queued" and b["mode"] == "overwrite" and b["recipe"] == "RCP-0432"
+    assert b["operators"] == [REF] and b["created_by"] == "alice"
     assert ok(await client.get(f"/api/batches/{b['batch_id']}"))["batch_id"] == b["batch_id"]
 
 
@@ -310,9 +305,9 @@ async def test_batch_not_found(client):
 
 
 async def test_batch_list_filters(client):
-    page = ok(await client.get("/api/batches", params={"chamber": "CH-A01", "status": "queued", "page_size": 1}))
+    page = ok(await client.get("/api/batches", params={"recipe": "RCP-0432", "status": "queued", "page_size": 1}))
     assert page["total"] >= 2 and len(page["items"]) == 1
-    assert ok(await client.get("/api/batches", params={"chamber": "CH-ZZZ"}))["total"] == 0
+    assert ok(await client.get("/api/batches", params={"recipe": "RCP-ZZZ"}))["total"] == 0
 
 
 # ---------------------------------------------------------------- 特征 / 算子查询
@@ -322,3 +317,51 @@ async def test_operator_list_and_detail(client):
     assert ok(await client.get("/api/operators", params={"name": "diffmean"}))["total"] == 1
     err(await client.get(O + "/9"), 404, "NOT_FOUND")
     err(await client.get(O + "/x"), 422, "VALIDATION_ERROR")
+
+
+# ---------------------------------------------------------------- 名称与机台类型
+async def test_feature_meta(client):
+    err(await client.patch("/api/features/gas_flow_diffmean", json={"name": "气体偏差"}), 401, "UNAUTHENTICATED")
+    err(await client.patch("/api/features/nope_feature", json={"name": "x"}, headers=ALICE), 404, "NOT_FOUND")
+    out = ok(await client.patch("/api/features/gas_flow_diffmean", json={"name": " 气体偏差 ", "tool_type": "ETCH"},
+                                headers=ALICE))
+    assert out == {"feature_id": "gas_flow_diffmean", "name": "气体偏差", "tool_type": "ETCH"}
+    # 只改传入的字段
+    out = ok(await client.patch("/api/features/gas_flow_diffmean", json={"name": "气体流量偏差"}, headers=BOB))
+    assert out["tool_type"] == "ETCH"
+    detail = ok(await client.get(F))
+    assert (detail["feature_id"], detail["display_name"], detail["tool_type"]) == (
+        "gas_flow_diffmean", "气体流量偏差", "ETCH")
+    assert ok(await client.get("/api/features/tool-types")) == ["ETCH"]
+    assert ok(await client.get("/api/features", params={"tool_type": "ETCH"}))["total"] == 1
+    assert ok(await client.get("/api/features", params={"tool_type": "CVD"}))["total"] == 0
+    assert ok(await client.get("/api/features", params={"q": "流量偏差"}))["total"] == 1
+    err(await client.patch("/api/features/gas_flow_diffmean", json={"name": "x" * 65}, headers=ALICE),
+        422, "VALIDATION_ERROR")
+
+
+async def test_operator_meta(client):
+    err(await client.patch("/api/operators/gas_flow_diffmean/nope_op", json={"name": "x"}, headers=ALICE),
+        404, "NOT_FOUND")
+    out = ok(await client.patch("/api/operators/gas_flow_diffmean/diffmax", json={"name": "偏差峰值"}, headers=ALICE))
+    assert out == {"feature_id": "gas_flow_diffmean", "operator": "diffmax", "name": "偏差峰值"}
+    page = ok(await client.get("/api/operators", params={"q": "峰值"}))
+    assert [(o["ref"], o["display_name"]) for o in page["items"]] == [(f"{MAX}@1", "偏差峰值")]
+    assert ok(await client.get("/api/operators/gas_flow_diffmean/diffmax/1"))["display_name"] == "偏差峰值"
+    assert ok(await client.get(O + "/1"))["display_name"] is None
+    ok(await client.patch("/api/operators/gas_flow_diffmean/diffmax", json={"name": ""}, headers=ALICE))
+    assert ok(await client.get("/api/operators/gas_flow_diffmean/diffmax/1"))["display_name"] is None
+
+
+# ---------------------------------------------------------------- GDE：试跑选 run_id
+async def test_gde_trial_pickers(client):
+    assert ok(await client.get("/api/gde/chambers/CH-A01/recipes")) == ["RCP-0432", "RCP-0433", "RCP-0500"]
+    err(await client.get("/api/gde/chambers/CH-ZZZ/recipes"), 404, "NOT_FOUND")
+    day = str(today() - timedelta(days=1))
+    runs = ok(await client.get("/api/gde/runs", params={"recipe": "RCP-0432", "chamber": "CH-A01",
+                                                        "start": day, "end": day}))
+    assert runs and all((r["chamber"], r["recipe"]) == ("CH-A01", "RCP-0432") for r in runs)
+    assert [r["end_at"] for r in runs] == sorted((r["end_at"] for r in runs), reverse=True)
+    both = ok(await client.get("/api/gde/runs", params={"recipe": "RCP-0432", "start": day, "end": day}))
+    assert {r["chamber"] for r in both} <= {"CH-A01", "CH-A02"} and len(both) >= len(runs)
+    assert len(ok(await client.get("/api/gde/runs", params={"recipe": "RCP-0432", "limit": 3}))) == 3

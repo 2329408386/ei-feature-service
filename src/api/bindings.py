@@ -27,16 +27,15 @@ REV = OP + "/revisions/{revision}"
 StatusFilter = Literal["active", "pending"]
 
 
-def _filters(feature_id=None, operator=None, tool=None, chamber=None, recipe=None, status=None) -> dict:
-    return {"feature_id": feature_id, "operator": operator, "tool": tool, "chamber": chamber, "recipe": recipe,
-            "status": status}
+def _filters(feature_id=None, operator=None, recipe=None, status=None) -> dict:
+    return {"feature_id": feature_id, "operator": operator, "recipe": recipe, "status": status}
 
 
 @router.get("/export")
-async def export(feature_id: str | None = None, operator: str | None = None, tool: str | None = None,
-                 chamber: str | None = None, recipe: str | None = None, status: StatusFilter | None = None):
+async def export(feature_id: str | None = None, operator: str | None = None, recipe: str | None = None,
+                 status: StatusFilter | None = None):
     """导出生效修订的绑定 JSON（下载文件）。"""
-    doc = await svc.export(**_filters(feature_id, operator, tool, chamber, recipe, status))
+    doc = await svc.export(**_filters(feature_id, operator, recipe, status))
     return Response(
         json.dumps(doc, ensure_ascii=False, indent=2), media_type="application/json",
         headers={"Content-Disposition": "attachment; filename=ei-feature-service-bindings.json"},
@@ -50,10 +49,10 @@ async def import_bindings(body: ImportDoc, user: User, dry_run: bool = True):
 
 
 @router.get("", response_model=dict[str, list[OperatorBindingOut]])
-async def list_bindings(feature_id: str | None = None, operator: str | None = None, tool: str | None = None,
-                        chamber: str | None = None, recipe: str | None = None, status: StatusFilter | None = None):
+async def list_bindings(feature_id: str | None = None, operator: str | None = None, recipe: str | None = None,
+                        status: StatusFilter | None = None):
     """按条件查询各算子的生效修订和待审核修订。"""
-    return {"items": await svc.list_bindings(**_filters(feature_id, operator, tool, chamber, recipe, status))}
+    return {"items": await svc.list_bindings(**_filters(feature_id, operator, recipe, status))}
 
 
 @router.get(OP, response_model=OperatorRevisionsOut | RevisionOut)

@@ -9,7 +9,7 @@ from typing import Generic, Literal, TypeVar
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 T = TypeVar("T")
-EXPORT_FORMAT = "ei-feature-service.bindings/v2"
+EXPORT_FORMAT = "ei-feature-service.bindings/v3"
 Status = Literal["draft", "review", "published", "retired"]
 
 
@@ -65,10 +65,11 @@ class _Reviewed(Out):
 # ---------------------------------------------------------------- 算子
 class OperatorOut(_Reviewed):
     feature_id: str
-    name: str
+    name: str  # 算子名（ID 的一部分，不可修改）
     version: int
     code_file: str
     code_hash: str
+    display_name: str | None = None  # 可修改的显示名称（operator_meta），未设置为 null
 
     @computed_field
     def ref(self) -> str:
@@ -94,7 +95,7 @@ class OperatorRetired(BaseModel):
     operator: str
     version: int
     new_revision: int | None  # 生成的 system 修订；该算子没有生效绑定时为 null
-    chambers: list[str]  # 不再计算该算子的腔室
+    recipes: list[str]  # 不再计算该算子的 recipe
 
 
 class TrialIn(BaseModel):
@@ -130,6 +131,8 @@ class OperatorRetireOut(BaseModel):
 class FeatureOut(_Reviewed):
     feature_id: str
     version: str
+    display_name: str | None = None  # 可修改的显示名称（feature_meta），未设置为 null
+    tool_type: str | None = None  # 机台类型（feature_meta）
 
     @computed_field
     def unit(self) -> str | None:
@@ -142,6 +145,31 @@ class FeatureDetail(FeatureOut):
     operators: list[OperatorOut]  # 该 feature_id 下全部算子（各版本）
 
 
+class FeatureMetaIn(BaseModel):
+    """修改特征的显示名称 / 机台类型：只改传入的字段，传 null 或空串表示清空。ID 不变，不需要评审。"""
+
+    name: str | None = Field(default=None, max_length=64)
+    tool_type: str | None = Field(default=None, max_length=32)
+
+
+class FeatureMetaOut(BaseModel):
+    feature_id: str
+    name: str | None
+    tool_type: str | None
+
+
+class OperatorMetaIn(BaseModel):
+    """修改算子的显示名称；传 null 或空串表示清空。算子名不变，不需要评审。"""
+
+    name: str | None = Field(default=None, max_length=64)
+
+
+class OperatorMetaOut(BaseModel):
+    feature_id: str
+    operator: str
+    name: str | None
+
+
 class FeatureRetireOut(BaseModel):
     feature: FeatureOut
     operators: list[str]  # 随特征一起下线的算子引用
@@ -149,30 +177,11 @@ class FeatureRetireOut(BaseModel):
 
 
 # ---------------------------------------------------------------- 算子绑定
-class BindingChamber(BaseModel):
-    tool: str
-    chamber: str
-
-
-class BindingRecipe(BaseModel):
-    recipe: str
-    chambers: list[BindingChamber]
-
-
-class FleetScope(BaseModel):
-    """选腔室时用的 fleet 和时间范围，只保存下来用于页面回显，不参与计算。"""
-
-    name: str
-    start: date
-    end: date
-
-
 class BindingSpec(BaseModel):
     feature_id: str
     operator: str
     version: int
-    fleet: FleetScope | None = None
-    recipes: list[BindingRecipe]
+    recipes: list[str]  # GDE 按 recipe 推送全部机台 / 腔室的执行，不再选腔室
 
 
 class BindingSubmitIn(BindingSpec):
@@ -217,7 +226,7 @@ class RevisionReviewIn(BaseModel):
 class ImportDoc(BaseModel):
     """导入时每个算子单独校验，所以 bindings 先按原样接收。"""
 
-    format: Literal["ei-feature-service.bindings/v2"]
+    format: Literal["ei-feature-service.bindings/v3"]
     exported_at: datetime | None = None
     bindings: list[dict]
 
@@ -241,23 +250,42 @@ class ToolChamberOut(BaseModel):
     chamber: str
 
 
-# ---------------------------------------------------------------- 调度、批次、特征值
-class ScheduleOut(BaseModel):
+class RunOut(BaseModel):
+    run_id: str
     tool: str
     chamber: str
+    recipe: str
+    lot: str | None
+    wafer: str | None
+    start_at: datetime
+    end_at: datetime
+
+
+# ---------------------------------------------------------------- 调度、批次、特征值
+class ScheduleChamber(BaseModel):
+    tool: str
+    chamber: str
+    progress: datetime | None  # 该腔室实时计算到的最新执行结束时间
+
+
+class ScheduleOut(BaseModel):
+    """调度页一行：一个 recipe 及其下的机台 / 腔室和算子。"""
+
+    recipe: str
     gde_sub_id: str | None
-    recipes: list[str]
-    operator_count: int
-    synced: bool  # GDE 订阅范围是否已与 recipes 一致
+    wanted: bool  # 是否有生效绑定需要订阅
+    synced: bool  # GDE 订阅是否与 wanted 一致
     last_error: str | None
     status: Literal["running", "paused", "cancelled", "unknown"]
+    operators: list[str]  # 生效绑定中的算子引用
+    chambers: list[ScheduleChamber] | None  # 跑过该 recipe 的机台 / 腔室（GDE 反查）；GDE 不可用时为 null
     progress: datetime | None
 
 
 class BatchIn(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    chamber: str
+    recipe: str
     mode: Literal["fill", "overwrite"]
     operators: list[str] = Field(min_length=1)  # ["feature_id/operator@version"]
     from_: date = Field(alias="from")
@@ -269,9 +297,8 @@ class BatchOut(Out):
     batch_id: int
     mode: Literal["live", "fill", "overwrite"]
     status: Literal["queued", "running", "done", "failed", "cancelled"]
-    chamber: str
+    recipe: str
     operators: list[str] | None
-    plan: dict[str, list[str]] | None
     data_from: datetime
     data_to: datetime
     reason: str | None

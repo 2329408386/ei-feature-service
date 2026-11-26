@@ -15,8 +15,8 @@ from sqlalchemy import func, or_, select
 
 from src.api.schemas import OperatorIn, ReviewIn
 from src.engine.sandbox import get_sandbox
-from src.model.tables import Feature, Operator
-from src.service import binding, subscription
+from src.model.tables import Feature, Operator, OperatorMeta
+from src.service import binding, meta, subscription
 from src.service import review as flow
 from src.service.package import check_operator
 from src.util import db
@@ -77,6 +77,7 @@ async def create(body: OperatorIn, user: str) -> Operator:
                 created_by=user, review_log=[],
             )
             s.add(row)
+            await meta.attach_operators(s, [row])
         return row
     except Exception:
         if prefix:  # 入库失败时清理已上传的文件
@@ -86,7 +87,7 @@ async def create(body: OperatorIn, user: str) -> Operator:
 
 async def list_operators(feature_id: str | None, name: str | None, status: str | None, q: str | None,
                          page: int, size: int):
-    """分页查询，q 匹配算子名或描述；按特征、算子名、版本降序。返回 (rows, total)。"""
+    """分页查询，q 匹配算子名、显示名称或描述；按特征、算子名、版本降序。返回 (rows, total)。"""
     cond = []
     if feature_id:
         cond.append(Operator.feature_id == feature_id)
@@ -96,13 +97,18 @@ async def list_operators(feature_id: str | None, name: str | None, status: str |
         cond.append(Operator.status == status)
     if q:
         like = f"%{q}%"
-        cond.append(or_(Operator.name.ilike(like), Operator.spec["desc"].astext.ilike(like)))
+        cond.append(or_(Operator.name.ilike(like), OperatorMeta.name.ilike(like),
+                        Operator.spec["desc"].astext.ilike(like)))
+    base = select(Operator).outerjoin(
+        OperatorMeta, (OperatorMeta.feature_id == Operator.feature_id) & (OperatorMeta.operator == Operator.name)
+    ).where(*cond)
     async with db.session() as s:
-        total = await s.scalar(select(func.count()).select_from(Operator).where(*cond))
+        total = await s.scalar(select(func.count()).select_from(base.subquery()))
         rows = (await s.execute(
-            select(Operator).where(*cond).order_by(Operator.feature_id, Operator.name, Operator.version.desc())
+            base.order_by(Operator.feature_id, Operator.name, Operator.version.desc())
             .offset((page - 1) * size).limit(size)
         )).scalars().all()
+        await meta.attach_operators(s, rows)
     return rows, total
 
 
@@ -110,6 +116,7 @@ async def get_operator(feature_id: str, name: str, version: int) -> tuple[Operat
     """算子和它的代码。"""
     async with db.session() as s:
         row = await _get(s, feature_id, name, version)
+        await meta.attach_operators(s, [row])
     code = await asyncio.to_thread(get_store().get, operator_prefix(feature_id, name, version) + row.code_file)
     return row, code.decode("utf-8")
 
@@ -120,6 +127,7 @@ async def submit(feature_id: str, name: str, version: int, user: str) -> Operato
     async with db.session() as s:
         row = await _get(s, feature_id, name, version, lock=True)
         flow.submit(row, user)
+        await meta.attach_operators(s, [row])
     return row
 
 
@@ -131,6 +139,7 @@ async def review(feature_id: str, name: str, version: int, body: ReviewIn, user:
             if "published" not in await _feature_statuses(s, feature_id):
                 raise invalid_state(f"特征 {feature_id} 还没有已发布版本，算子不能先发布", "unpublished")
             flow.publish(row, user)
+        await meta.attach_operators(s, [row])
     return row
 
 
@@ -145,8 +154,9 @@ async def retire(feature_id: str, name: str, version: int, reason: str, user: st
     async with db.session() as s:
         row = await _get(s, feature_id, name, version, lock=True)
         hit = await retire_in_tx(s, row, reason, user)
+        await meta.attach_operators(s, [row])
     affected = [hit] if hit else []
-    await subscription.sync({c for a in affected for c in a["chambers"]})
+    await subscription.sync({r for a in affected for r in a["recipes"]})
     return row, affected
 
 

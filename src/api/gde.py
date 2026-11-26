@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
-"""GDE 元数据转发：/api/gde。绑定页面按 fleet → 腔室 → recipe → 机台 / 腔室 的顺序调用。"""
+"""GDE 元数据转发：/api/gde。
+
+- 绑定页面：recipes?q=（模糊搜索）、recipes/{recipe}/chambers（只读展示该 recipe 当前覆盖的机台 / 腔室）；
+- 试跑选 run_id：时间范围 + fleet → fleets/{fleet}/chambers → chambers/{chamber}/recipes → runs。
+"""
 
 import asyncio
 from datetime import date, timedelta
@@ -9,13 +13,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from src.api.schemas import ToolChamberOut
+from src.api.schemas import RunOut, ToolChamberOut
 from src.util.errors import gde_unavailable, invalid, not_found
 from src.util.gde import GdeError, GdeNotFound, get_gde
 from src.util.timeutil import day_range, today
 
 router = APIRouter(prefix="/gde", tags=["GDE 元数据"])
 DEFAULT_DAYS = 30  # fleet 选腔室默认看最近 1 个月
+RUNS_MAX = 500  # 执行清单最多返回条数（新的在前）
 
 
 async def _call(fn, *args):
@@ -37,15 +42,36 @@ async def fleets():
     return await _call(get_gde().list_fleets)
 
 
-@router.get("/fleets/{fleet}/chambers", response_model=list[ToolChamberOut])
-async def fleet_chambers(fleet: str, start: date | None = None, end: date | None = None):
-    """fleet 下在 [start, end]（默认最近 1 个月）内有执行的机台、腔室。"""
+def _period(start: date | None, end: date | None) -> tuple:
+    """[start, end]（默认最近 1 个月）转成时间范围；开始晚于结束时报参数错误。"""
     end = end or today()
     start = start or end - timedelta(days=DEFAULT_DAYS)
     if start > end:
         raise invalid("VALIDATION_ERROR", "参数错误", [{"path": "start", "message": "开始日期不能晚于结束日期"}])
-    lo, hi = day_range(start, end)
-    return _pairs(await _call(get_gde().fleet_chambers, fleet, lo, hi))
+    return day_range(start, end)
+
+
+@router.get("/fleets/{fleet}/chambers", response_model=list[ToolChamberOut])
+async def fleet_chambers(fleet: str, start: date | None = None, end: date | None = None):
+    """fleet 下在 [start, end]（默认最近 1 个月）内有执行的机台、腔室。"""
+    return _pairs(await _call(get_gde().fleet_chambers, fleet, *_period(start, end)))
+
+
+@router.get("/chambers/{chamber}/recipes", response_model=list[str])
+async def chamber_recipes(chamber: str, start: date | None = None, end: date | None = None):
+    """腔室在 [start, end]（默认最近 1 个月）内跑过的 recipe。"""
+    return await _call(get_gde().chamber_recipes, chamber, *_period(start, end))
+
+
+@router.get("/runs", response_model=list[RunOut])
+async def runs(recipe: str, chamber: str | None = None, start: date | None = None, end: date | None = None,
+               limit: Annotated[int, Query(ge=1, le=RUNS_MAX)] = 200):
+    """recipe 在 [start, end]（默认最近 1 个月）内的执行，可限定腔室；按结束时间倒序，最多 limit 条。供试跑选 run_id。"""
+    rows = await _call(get_gde().list_runs, recipe, *_period(start, end), chamber)
+    return [
+        {k: getattr(r, k) for k in ("run_id", "tool", "chamber", "recipe", "lot", "wafer", "start_at", "end_at")}
+        for r in sorted(rows, key=lambda r: r.end_at, reverse=True)[:limit]
+    ]
 
 
 @router.get("/recipes", response_model=list[str])

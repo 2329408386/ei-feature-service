@@ -12,7 +12,7 @@ from src.util.timeutil import day_range
 
 BINDING = {
     "feature_id": "gas_flow_diffmean", "operator": "diffmean", "version": 1,
-    "recipes": [{"recipe": "RCP-0432", "chambers": [{"tool": "ETCH-01", "chamber": "CH-A01"}]}],
+    "recipes": ["RCP-0432"],
 }
 KEY = ("f_x", "op_y", 2)
 
@@ -76,38 +76,25 @@ def spec(**kw) -> BindingSpec:
 
 
 def test_normalize_sorts_and_dedups():
-    s = spec(fleet={"name": "F", "start": "2026-10-01", "end": "2026-11-01"}, recipes=[
-        {"recipe": "B", "chambers": [{"tool": "T2", "chamber": "C2"}, {"tool": "T1", "chamber": "C1"},
-                                     {"tool": "T1", "chamber": "C1"}]},
-        {"recipe": "A", "chambers": [{"tool": "T1", "chamber": "C1"}]},
-    ])
-    n = binding.normalize(s)
-    assert n["fleet"] == {"name": "F", "start": "2026-10-01", "end": "2026-11-01"}
-    assert [r["recipe"] for r in n["recipes"]] == ["A", "B"]
-    assert n["recipes"][1]["chambers"] == [{"tool": "T1", "chamber": "C1"}, {"tool": "T2", "chamber": "C2"}]
-    assert binding.chambers_of(n) == {"C1", "C2"}
-    assert binding.recipes_on(n, "C1") == ["A", "B"] and binding.recipes_on(n, "C2") == ["B"]
+    n = binding.normalize(spec(recipes=["B", " A", "B"]))
+    assert n == {"feature_id": "gas_flow_diffmean", "operator": "diffmean", "version": 1, "recipes": ["A", "B"]}
+    assert binding.recipes_of(n) == {"A", "B"}
+
+
+def test_normalize_drops_unknown_keys():
+    assert "fleet" not in binding.normalize(spec(fleet={"name": "F"}))
 
 
 def test_check_structure():
     assert binding._check_structure(spec()) == []
-    errs = binding._check_structure(spec(
-        fleet={"name": "F", "start": "2026-11-02", "end": "2026-11-01"},
-        recipes=[{"recipe": "A", "chambers": []}, {"recipe": "A", "chambers": [{"tool": "T", "chamber": "C"}]}],
-    ))
-    assert [e["path"] for e in errs] == ["fleet.start", "recipes[0].chambers", "recipes[1].recipe"]
+    errs = binding._check_structure(spec(recipes=["A", " ", "A"]))
+    assert [e["path"] for e in errs] == ["recipes[1]", "recipes[2]"]
     assert [e["path"] for e in binding._check_structure(spec(recipes=[]))] == ["recipes"]
 
 
-async def test_check_chambers_against_gde():
-    s = spec(recipes=[
-        {"recipe": "RCP-0432", "chambers": [{"tool": "ETCH-01", "chamber": "CH-A01"},
-                                            {"tool": "ETCH-02", "chamber": "CH-A01"},
-                                            {"tool": "ETCH-02", "chamber": "CH-B02"}]},
-        {"recipe": "RCP-9999", "chambers": [{"tool": "ETCH-01", "chamber": "CH-A01"}]},
-    ])
-    errs = await binding._check_chambers(s)
-    assert [e["path"] for e in errs] == ["recipes[0].chambers[1]", "recipes[0].chambers[2]", "recipes[1].recipe"]
+async def test_check_recipes_against_gde():
+    errs = await binding._check_recipes(spec(recipes=["RCP-0432", "RCP-9999", ""]))
+    assert errs == [{"path": "recipes[1]", "message": "recipe RCP-9999 不存在"}]
 
 
 async def test_import_one_format_error_does_not_touch_db():

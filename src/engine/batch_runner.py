@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
-"""补算 / 重算：领取排队中的批次，经 SDK 拉执行清单，逐个 run_id 计算。
+"""补算 / 重算：领取排队中的批次，经 SDK 拉该 recipe 在全部腔室上的执行清单，逐个 run_id 计算。
 
 - fill：已有结果的跳过；overwrite：同一事务里先删后插，完成后把被覆盖的旧批次标记 superseded_by。
 - 每处理一个 run_id 前检查批次是否被取消。
@@ -64,36 +64,31 @@ async def _finish(batch_id: int, status: str, error: str | None = None) -> None:
             b.status, b.error, b.finished_at = status, error, now()
 
 
-async def _plan(b: FeatureBatch) -> tuple[list[str], dict[str, list[OperatorRef]]]:
-    """按批次创建时的快照 b.plan：涉及的 recipe（排序），以及每个 recipe 要算的算子。"""
-    refs = sorted({ref for refs in b.plan.values() for ref in refs})
+async def _operators(b: FeatureBatch) -> list[OperatorRef]:
+    """批次创建时记下的算子（b.operators）。"""
     async with db.session() as s:
-        ops = await load_operators(s, [parse_ref(r) for r in refs])
-    plan = {recipe: [ops[r] for r in refs if r in ops] for recipe, refs in b.plan.items()}
-    plan = {recipe: v for recipe, v in plan.items() if v}
-    return sorted(plan), plan
+        ops = await load_operators(s, [parse_ref(r) for r in b.operators])
+    return [ops[r] for r in b.operators if r in ops]
 
 
 async def _supersede(b: FeatureBatch) -> None:
-    """重算完成后：同腔室、时间重叠、算子有交集、尚未被覆盖的旧批次标记为被本批次覆盖。"""
+    """重算完成后：同 recipe、时间重叠、算子有交集、尚未被覆盖的旧批次标记为被本批次覆盖。"""
     async with db.session() as s:
         await s.execute(
             text("""
                 UPDATE feature_batch SET superseded_by = :bid
-                WHERE chamber = :chamber AND batch_id <> :bid AND superseded_by IS NULL
+                WHERE recipe = :recipe AND batch_id <> :bid AND superseded_by IS NULL
                   AND status IN ('running', 'done') AND data_from < :to AND data_to > :from
                   AND (operators IS NULL OR operators ?| CAST(:ops AS text[]))
             """),
-            {"bid": b.batch_id, "chamber": b.chamber, "from": b.data_from, "to": b.data_to, "ops": b.operators},
+            {"bid": b.batch_id, "recipe": b.recipe, "from": b.data_from, "to": b.data_to, "ops": b.operators},
         )
 
 
-async def _list_runs(b: FeatureBatch, recipes: list[str]) -> list:
-    """经 SDK 拉取批次时间范围内、属于这些 recipe 的执行清单。"""
-    if not recipes:
-        return []
+async def _list_runs(b: FeatureBatch) -> list:
+    """经 SDK 拉取批次时间范围内该 recipe 在全部腔室上的执行清单。"""
     gde = get_gde()
-    return await _with_retry(lambda: asyncio.to_thread(gde.list_runs, b.chamber, recipes, b.data_from, b.data_to))
+    return await _with_retry(lambda: asyncio.to_thread(gde.list_runs, b.recipe, b.data_from, b.data_to))
 
 
 async def _compute_one(b: FeatureBatch, op: OperatorRef, ref: RunRef, overwrite: bool) -> None:
@@ -104,7 +99,7 @@ async def _compute_one(b: FeatureBatch, op: OperatorRef, ref: RunRef, overwrite:
                 return
 
     async def call():
-        async with limits.slot(b.chamber, backfill=True):
+        async with limits.slot(ref.chamber, backfill=True):
             return await get_sandbox().run(op, ref.run_id)
 
     r = await _with_retry(call)
@@ -115,14 +110,14 @@ async def _compute_one(b: FeatureBatch, op: OperatorRef, ref: RunRef, overwrite:
 
 async def execute(b: FeatureBatch) -> None:
     """执行一个补算 / 重算批次：逐个 run_id 计算；每个执行前检查是否已被取消。"""
-    recipes, plan = await _plan(b)
+    ops = await _operators(b)
     overwrite = b.mode == "overwrite"
     try:
-        for run in await _list_runs(b, recipes):
+        for run in await _list_runs(b) if ops else []:
             if await _status(b.batch_id) == "cancelled":
                 return
             ref = RunRef(run.run_id, run.tool, run.chamber, run.recipe, run.lot, run.wafer, run.end_at)
-            for op in plan.get(run.recipe, []):
+            for op in ops:
                 await _compute_one(b, op, ref, overwrite)
             async with db.session() as s:
                 await add_run(s, b.batch_id)
@@ -141,7 +136,7 @@ async def run_forever() -> None:
         if b is None:
             await asyncio.sleep(POLL_S)
             continue
-        log.info("开始执行批次 #%s（%s %s）", b.batch_id, b.mode, b.chamber)
+        log.info("开始执行批次 #%s（%s %s）", b.batch_id, b.mode, b.recipe)
         try:
             await execute(b)
         except Exception as e:

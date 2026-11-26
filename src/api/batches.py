@@ -22,14 +22,14 @@ async def create(body: BatchIn, user: User):
 
 @router.get("", response_model=Page[BatchOut])
 async def list_batches(
-    chamber: str | None = None,
+    recipe: str | None = None,
     mode: Literal["live", "fill", "overwrite"] | None = None,
     status: Literal["queued", "running", "done", "failed", "cancelled"] | None = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 20,
 ):
     """分页查询批次，新的在前。"""
-    rows, total = await svc.list_batches(chamber, mode, status, page, page_size)
+    rows, total = await svc.list_batches(recipe, mode, status, page, page_size)
     return {"items": rows, "total": total, "page": page, "page_size": page_size}
 
 

@@ -19,7 +19,8 @@ from src.util.stream import RunDoneStream
 from src.util.timeutil import today
 from test.conftest import load_sample
 
-TABLES = "feature_value, feature_batch, chamber_subscription, binding_item, operator_binding, operator, feature"
+TABLES = ("feature_value, feature_batch, recipe_subscription, binding_item, operator_binding, operator_meta, operator, "
+          "feature_meta, feature")
 F = "/api/features/gas_flow_diffmean/1.0.0"
 O = "/api/operators/gas_flow_diffmean/diffmean"
 B = "/api/bindings/gas_flow_diffmean/diffmean"
@@ -32,11 +33,7 @@ def chambers(*pairs) -> list[dict]:
     return [{"tool": t, "chamber": c} for t, c in pairs]
 
 
-BINDING = {
-    "feature_id": "gas_flow_diffmean", "operator": "diffmean", "version": 1,
-    "fleet": {"name": "FLEET-ETCH-A", "start": "2026-10-25", "end": "2026-11-25"},
-    "recipes": [{"recipe": "RCP-0432", "chambers": chambers(("ETCH-01", "CH-A01"))}],
-}
+BINDING = {"feature_id": "gas_flow_diffmean", "operator": "diffmean", "version": 1, "recipes": ["RCP-0432"]}
 
 
 async def reset() -> None:
@@ -166,18 +163,19 @@ async def test_gde_metadata(client):
     err(await client.get("/api/gde/recipes/RCP-9999/chambers"), 404, "NOT_FOUND")
 
 
+def sched(rows: list[dict]) -> dict[str, dict]:
+    return {x["recipe"]: x for x in rows}
+
+
 async def test_binding_flow(client):
-    bad = {**BINDING, "version": 9, "recipes": [
-        {"recipe": "RCP-9999", "chambers": chambers(("ETCH-01", "CH-A01"))},
-        {"recipe": "RCP-0432", "chambers": chambers(("ETCH-02", "CH-B02"))},
-    ]}
+    bad = {**BINDING, "version": 9, "recipes": ["RCP-9999", "RCP-0432", "RCP-0432"]}
     errors = err(await client.post(B, json=bad, headers=ALICE), 422, "BINDING_INVALID")["details"]["errors"]
-    assert {e["path"] for e in errors} == {"version", "recipes[0].recipe", "recipes[1].chambers[0]"}
+    assert {e["path"] for e in errors} == {"version", "recipes[0]", "recipes[2]"}
     err(await client.post("/api/bindings/gas_flow_diffmean/diffmax", json=BINDING, headers=ALICE),
         422, "BINDING_INVALID")  # 路径与 body 不一致
 
     rev = ok(await client.post(B, json=BINDING, headers={**ALICE, "X-Client": "console"}), 201)
-    assert rev["status"] == "pending" and rev["source"] == "console" and rev["spec"]["fleet"]["name"] == "FLEET-ETCH-A"
+    assert rev["status"] == "pending" and rev["source"] == "console" and rev["spec"]["recipes"] == ["RCP-0432"]
     err(await client.post(B, json=BINDING, headers=ALICE), 409, "PENDING_EXISTS")
 
     review = f"{B}/revisions/{rev['revision']}/review"
@@ -185,29 +183,31 @@ async def test_binding_flow(client):
     active = ok(await client.post(review, json={"decision": "approve"}, headers=BOB))
     assert active["status"] == "active"
 
-    schedules = ok(await client.get("/api/schedules"))
-    assert [(x["chamber"], x["recipes"], x["synced"], x["status"], x["operator_count"]) for x in schedules] == [
-        ("CH-A01", ["RCP-0432"], True, "running", 1)]
+    # 调度以 recipe 为键：一个 GDE 订阅覆盖跑过该 recipe 的全部机台 / 腔室
+    rows = ok(await client.get("/api/schedules"))
+    assert [(x["recipe"], x["synced"], x["status"], x["operators"]) for x in rows] == [
+        ("RCP-0432", True, "running", [REF])]
+    assert [(c["tool"], c["chamber"]) for c in rows[0]["chambers"]] == [("ETCH-01", "CH-A01"), ("ETCH-01", "CH-A02")]
+    assert get_gde().subs[rows[0]["gde_sub_id"]]["recipe"] == "RCP-0432"
+    assert ok(await client.get("/api/schedules", params={"chamber": "CH-A02"}))[0]["recipe"] == "RCP-0432"
+    assert ok(await client.get("/api/schedules", params={"tool": "ETCH-02"})) == []
 
-    items = ok(await client.get("/api/bindings", params={"chamber": "CH-A01"}))["items"]
+    items = ok(await client.get("/api/bindings", params={"recipe": "RCP-0432"}))["items"]
     assert [(x["feature_id"], x["operator"]) for x in items] == [("gas_flow_diffmean", "diffmean")]
     assert ok(await client.get("/api/bindings", params={"recipe": "RCP-0500"}))["items"] == []
 
     doc = ok(await client.get("/api/bindings/export"))
-    assert doc["format"] == "ei-feature-service.bindings/v2"
+    assert doc["format"] == "ei-feature-service.bindings/v3"
     result = ok(await client.post("/api/bindings/import", json=doc, headers=ALICE))["items"]
     assert [x["action"] for x in result] == ["skip"]  # 与生效修订相同
 
-    # 新修订：多加一个 recipe 和腔室 → 订阅范围随之扩大
-    wider = {**BINDING, "recipes": [
-        {"recipe": "RCP-0432", "chambers": chambers(("ETCH-01", "CH-A01"), ("ETCH-01", "CH-A02"))},
-        {"recipe": "RCP-0433", "chambers": chambers(("ETCH-01", "CH-A01"))},
-    ], "base_revision": 1}
+    # 新修订：多加一个 recipe → 多一个 recipe 订阅
+    wider = {**BINDING, "recipes": ["RCP-0433", "RCP-0432"], "base_revision": 1}
     rev2 = ok(await client.post(B, json=wider, headers=ALICE), 201)
+    assert rev2["spec"]["recipes"] == ["RCP-0432", "RCP-0433"]  # 规范化排序
     ok(await client.post(f"{B}/revisions/{rev2['revision']}/review", json={"decision": "approve"}, headers=BOB))
-    schedules = {x["chamber"]: x for x in ok(await client.get("/api/schedules"))}
-    assert schedules["CH-A01"]["recipes"] == ["RCP-0432", "RCP-0433"]
-    assert schedules["CH-A02"]["recipes"] == ["RCP-0432"] and schedules["CH-A02"]["synced"]
+    rows = sched(ok(await client.get("/api/schedules")))
+    assert list(rows) == ["RCP-0432", "RCP-0433"] and rows["RCP-0433"]["synced"]
     history = ok(await client.get(B))["revisions"]
     assert [(r["revision"], r["status"]) for r in history] == [(2, "active"), (1, "superseded")]
 
@@ -216,9 +216,10 @@ async def test_binding_flow(client):
     err(await client.post(f"{B}/revisions/{rev3['revision']}/withdraw", headers=BOB), 403, "FORBIDDEN")
     assert ok(await client.post(f"{B}/revisions/{rev3['revision']}/withdraw", headers=ALICE))["status"] == "withdrawn"
 
-    ok(await client.post("/api/schedules/CH-A01/pause", headers=ALICE), 204)
-    assert {x["chamber"]: x["status"] for x in ok(await client.get("/api/schedules"))}["CH-A01"] == "paused"
-    ok(await client.post("/api/schedules/CH-A01/resume", headers=ALICE), 204)
+    ok(await client.post("/api/schedules/RCP-0432/pause", headers=ALICE), 204)
+    assert sched(ok(await client.get("/api/schedules")))["RCP-0432"]["status"] == "paused"
+    ok(await client.post("/api/schedules/RCP-0432/resume", headers=ALICE), 204)
+    err(await client.post("/api/schedules/RCP-0500/pause", headers=ALICE), 404, "NOT_FOUND")
 
 
 async def test_subscription_retry(client):
@@ -227,25 +228,25 @@ async def test_subscription_retry(client):
     from src.util.gde import GdeUnavailable
 
     gde = get_gde()
-    original = gde.update_subscription
-    a02 = {x["chamber"]: x for x in ok(await client.get("/api/schedules"))}["CH-A02"]["gde_sub_id"]
+    original = gde.cancel_subscription
+    sub_0433 = sched(ok(await client.get("/api/schedules")))["RCP-0433"]["gde_sub_id"]
 
     def down(*_):
         raise GdeUnavailable("down")
 
-    gde.update_subscription = down
-    try:
+    gde.cancel_subscription = down
+    try:  # 回到只绑 RCP-0432：RCP-0433 需要取消订阅，但 GDE 不可用
         rev = ok(await client.post(B, json=BINDING, headers=ALICE), 201)
         ok(await client.post(f"{B}/revisions/{rev['revision']}/review", json={"decision": "approve"}, headers=BOB))
-        s = {x["chamber"]: x for x in ok(await client.get("/api/schedules"))}
-        assert s["CH-A01"]["synced"] is False and "down" in s["CH-A01"]["last_error"]
+        s = sched(ok(await client.get("/api/schedules")))
+        assert s["RCP-0433"]["synced"] is False and s["RCP-0433"]["wanted"] is False
+        assert "down" in s["RCP-0433"]["last_error"]
     finally:
-        gde.update_subscription = original
+        gde.cancel_subscription = original
     await subscription.sync()
-    s = {x["chamber"]: x for x in ok(await client.get("/api/schedules"))}
-    assert s["CH-A01"]["synced"] and s["CH-A01"]["recipes"] == ["RCP-0432"] and s["CH-A01"]["last_error"] is None
-    assert gde.subs[s["CH-A01"]["gde_sub_id"]]["recipes"] == ["RCP-0432"]
-    assert "CH-A02" not in s and gde.subscription_status(a02) == "cancelled"  # CH-A02 不再需要订阅
+    s = sched(ok(await client.get("/api/schedules")))
+    assert list(s) == ["RCP-0432"] and s["RCP-0432"]["synced"]  # RCP-0433 不再需要订阅
+    assert gde.subscription_status(sub_0433) == "cancelled"
 
 
 async def test_live(client):
@@ -266,20 +267,34 @@ async def test_live(client):
     assert values["items"][0]["operator"] == "diffmean" and values["items"][0]["version"] == 1
     batch = ok(await client.get("/api/batches", params={"mode": "live"}))["items"][0]
     assert batch["run_total"] == 1 and batch["value_ok"] == 1 and batch["operators"] is None
+    assert batch["recipe"] == "RCP-0432"
+
+    # 绑定里没有选腔室：同一 recipe 在另一个腔室（甚至新腔室）上的执行也会计算
+    await redis.xadd("gde:run:done", {**fields, "run_id": "RUN-LIVE-3", "chamber": "CH-NEW", "tool": "ETCH-09"})
+    for msg_id, f in await consumer.stream.read(block_ms=10):
+        await consumer.handle(msg_id, f)
+    values = ok(await client.get("/api/values", params={"operator": REF, "chamber": "CH-NEW"}))
+    assert values["total"] == 1 and values["items"][0]["tool"] == "ETCH-09"
+    sched_row = sched(ok(await client.get("/api/schedules")))["RCP-0432"]
+    assert sched_row["progress"] is not None
 
 
 async def test_fill_and_overwrite(client):
     day = str(today() - timedelta(days=1))
-    body = {"chamber": "CH-A01", "mode": "fill", "operators": [REF], "from": day, "to": day, "reason": "补历史"}
+    body = {"recipe": "RCP-0432", "mode": "fill", "operators": [REF], "from": day, "to": day, "reason": "补历史"}
     err(await client.post("/api/batches", json={**body, "operators": ["x_x/y_y@1"]}, headers=ALICE),
         422, "VALIDATION_ERROR")
     fill = ok(await client.post("/api/batches", json=body, headers=ALICE), 201)
-    assert fill["status"] == "queued" and fill["plan"] == {"RCP-0432": [REF]}
+    assert fill["status"] == "queued" and fill["recipe"] == "RCP-0432" and fill["operators"] == [REF]
 
     await batch_runner.execute(await batch_runner.claim_next())
     fill = ok(await client.get(f"/api/batches/{fill['batch_id']}"))
     assert fill["status"] == "done" and fill["run_total"] > 0
     assert fill["value_ok"] + fill["value_null"] == fill["run_total"]
+    # 补算覆盖该 recipe 在全部腔室上的执行
+    chambers_done = {x["chamber"] for x in ok(await client.get(
+        "/api/values", params={"operator": REF, "from": day, "to": day, "page_size": 1000}))["items"]}
+    assert chambers_done == {"CH-A01", "CH-A02"}
 
     over = ok(await client.post("/api/batches", json={**body, "mode": "overwrite", "reason": "重算"}, headers=ALICE), 201)
     await batch_runner.execute(await batch_runner.claim_next())
@@ -292,12 +307,12 @@ async def test_fill_and_overwrite(client):
 
 
 async def test_retire_operator(client):
-    sub_id = {x["chamber"]: x for x in ok(await client.get("/api/schedules"))}["CH-A01"]["gde_sub_id"]
+    sub_id = sched(ok(await client.get("/api/schedules")))["RCP-0432"]["gde_sub_id"]
     out = ok(await client.post(O + "/1/retire", json={"reason": "算法升级"}, headers=BOB))
     assert out["operator"]["status"] == "retired"
     assert out["affected"] == [{"feature_id": "gas_flow_diffmean", "operator": "diffmean", "version": 1,
-                                "new_revision": 5, "chambers": ["CH-A01"]}]
-    assert get_gde().subscription_status(sub_id) == "cancelled"  # 腔室没有算子要算了，订阅取消
+                                "new_revision": 5, "recipes": ["RCP-0432"]}]
+    assert get_gde().subscription_status(sub_id) == "cancelled"  # recipe 没有算子要算了，订阅取消
     assert ok(await client.get("/api/schedules")) == []
 
     latest = ok(await client.get(B))["revisions"][0]
@@ -324,5 +339,5 @@ async def test_new_feature_version_and_retire_feature(client):
     ok(await client.post(f"{b}/revisions/{rev['revision']}/review", json={"decision": "approve"}, headers=BOB))
     out = ok(await client.post("/api/features/gas_flow_diffmean/1.1.0/retire", json={"reason": "停用"}, headers=BOB))
     assert out["feature"]["status"] == "retired" and out["operators"] == ["gas_flow_diffmean/diffmax@1"]
-    assert [a["chambers"] for a in out["affected"]] == [["CH-A01"]]
+    assert [a["recipes"] for a in out["affected"]] == [["RCP-0432"]]
     err(await client.post("/api/operators", json=body, headers=ALICE), 409, "INVALID_STATE")

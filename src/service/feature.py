@@ -11,8 +11,8 @@
 from sqlalchemy import func, or_, select, text
 
 from src.api.schemas import ReviewIn
-from src.model.tables import Feature, Operator
-from src.service import operator, subscription
+from src.model.tables import Feature, FeatureMeta, Operator
+from src.service import meta, operator, subscription
 from src.service import review as flow
 from src.service.package import check_feature_spec
 from src.util import db, semver
@@ -44,28 +44,34 @@ async def create(spec: dict, user: str) -> Feature:
             raise conflict("VERSION_NOT_INCREASING", f"新版本必须大于已有的最大版本 {max(versions, key=semver.parse)}")
         row = Feature(feature_id=fid, version=ver, status="draft", spec=spec, created_by=user, review_log=[])
         s.add(row)
+        await meta.attach_features(s, [row])
     return row
 
 
-async def list_features(status: str | None, q: str | None, feature_id: str | None, page: int, size: int):
-    """分页查询，q 匹配特征 ID 或描述；按特征 ID、版本号降序排列。返回 (rows, total)。"""
+async def list_features(status: str | None, q: str | None, feature_id: str | None, tool_type: str | None,
+                        page: int, size: int):
+    """分页查询，q 匹配特征 ID、显示名称或描述，tool_type 按机台类型过滤；按特征 ID、版本号降序。返回 (rows, total)。"""
     cond = []
     if status:
         cond.append(Feature.status == status)
     if feature_id:
         cond.append(Feature.feature_id == feature_id)
+    if tool_type:
+        cond.append(FeatureMeta.tool_type == tool_type)
     if q:
         like = f"%{q}%"
-        cond.append(or_(Feature.feature_id.ilike(like), Feature.spec["desc"].astext.ilike(like)))
+        cond.append(or_(Feature.feature_id.ilike(like), FeatureMeta.name.ilike(like),
+                        Feature.spec["desc"].astext.ilike(like)))
+    base = select(Feature).outerjoin(FeatureMeta, FeatureMeta.feature_id == Feature.feature_id).where(*cond)
     async with db.session() as s:
-        total = await s.scalar(select(func.count()).select_from(Feature).where(*cond))
+        total = await s.scalar(select(func.count()).select_from(base.subquery()))
         rows = (
             await s.execute(
-                select(Feature).where(*cond)
-                .order_by(Feature.feature_id, text("string_to_array(version, '.')::int[] DESC"))
+                base.order_by(Feature.feature_id, text("string_to_array(feature.version, '.')::int[] DESC"))
                 .offset((page - 1) * size).limit(size)
             )
         ).scalars().all()
+        await meta.attach_features(s, rows)
     return rows, total
 
 
@@ -77,6 +83,8 @@ async def get_feature(feature_id: str, version: str) -> tuple[Feature, list[Oper
             select(Operator).where(Operator.feature_id == feature_id)
             .order_by(Operator.name, Operator.version.desc())
         )).scalars().all()
+        await meta.attach_features(s, [row])
+        await meta.attach_operators(s, ops)
     return row, ops
 
 
@@ -86,6 +94,7 @@ async def submit(feature_id: str, version: str, user: str) -> Feature:
     async with db.session() as s:
         row = await _get(s, feature_id, version, lock=True)
         flow.submit(row, user)
+        await meta.attach_features(s, [row])
     return row
 
 
@@ -103,6 +112,7 @@ async def review(feature_id: str, version: str, body: ReviewIn, user: str) -> Fe
                 old.retire_reason = f"被 {version} 替代"
                 await s.flush()  # 先让旧版本退出 published，避免违反“每个特征一个已发布版本”的唯一索引
             flow.publish(row, user)
+        await meta.attach_features(s, [row])
     return row
 
 
@@ -122,7 +132,8 @@ async def retire(feature_id: str, version: str, reason: str, user: str) -> tuple
             hit = await operator.retire_in_tx(s, op, f"特征 {feature_id}@{version} 下线：{reason}", user)
             if hit:
                 affected.append(hit)
-    await subscription.sync({c for a in affected for c in a["chambers"]})
+        await meta.attach_features(s, [row])
+    await subscription.sync({r for a in affected for r in a["recipes"]})
     return row, refs, affected
 
 

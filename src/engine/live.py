@@ -3,6 +3,8 @@
 # Copyright (c) Sicarrier Technologies Co., Ltd. 2026. All rights reserved.
 """实时计算：监听 Redis Stream gde:run:done，每条通知按生效绑定计算该执行的全部算子。
 
+GDE 按 recipe 订阅并推送该 recipe 在所有机台 / 腔室上的执行，所以只按 recipe 匹配算子。
+
 一条消息的所有算子写完才 XACK；GDE 不可用时不 ACK，等认领后重试；
 投递次数超过 MAX_DELIVERIES 时，把还没结果的算子记为 FETCH_ERROR 后 ACK。
 """
@@ -80,10 +82,10 @@ class LiveConsumer:
     async def process(self, run: RunRef, give_up: bool = False) -> bool:
         """计算这次执行要算的算子。返回 True 表示处理完毕可以 ACK。"""
         async with db.session() as s:
-            ops = await operators_for(s, run.chamber, run.recipe)
-            if not ops:  # 该腔室的该 recipe 不在任何生效绑定内
+            ops = await operators_for(s, run.recipe)
+            if not ops:  # 该 recipe 不在任何生效绑定内
                 return True
-            batch_id = await live_batch(s, run.chamber, run.end_at)
+            batch_id = await live_batch(s, run.recipe, run.end_at)
 
         wrote = False
         for op in ops:

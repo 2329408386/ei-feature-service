@@ -1,12 +1,12 @@
 # CLAUDE.md
 
-ei-feature-service：特征计算服务。特征（feature.json，只有元数据）下挂多个算子（operator.json + py 代码，各自版本、各自评审），算子按 recipe → 机台/腔室 绑定，按 GDE 的 run_id 实时或批量计算特征值。
+ei-feature-service：特征计算服务。特征（feature.json，只有元数据）下挂多个算子（operator.json + py 代码，各自版本、各自评审），算子只按 recipe 绑定（不选机台/腔室），GDE 按 recipe 推送它在所有机台/腔室上的 run_id（含以后新增的腔室），实时或批量计算特征值。特征和算子的显示名称（特征还有机台类型）可改，ID 不变。
 
 ## 设计文档是唯一依据
 
 `redesign.html` 是完整设计（第 4 页“实现规格”含技术栈、API schema、状态机、引擎流程），目标是让 AI 能直接按它生成代码。改代码时与设计文档保持一致；行为有变化时同步更新文档。
 
-前端是单独的仓库（设计文档第 11 节），本机在同级目录 `../ei-feature-web`（Vue 3 + Element Plus + ECharts，`npm run dev` 起在 :5173，/api 代理到 :8000）。
+前端是单独的仓库（设计文档第 11 节）`git@github.com:2329408386/ei-feature-frontend.git`，本机在同级目录 `../ei-feature-web`（Vue 3 + Element Plus + ECharts，`npm run dev` 起在 :5173，/api 代理到 :8000）。前端仓库没有自动提交 hook，需要手动提交推送。
 
 ## 常用命令
 
@@ -41,11 +41,11 @@ uv run pytest test/integration/test_flow.py -q           # 集成测试（需要
 
 单进程：`main.py` 启动时 读配置 → 执行 `src/model/schema.sql`（全部 `IF NOT EXISTS`，带 advisory lock）→ 启动后台任务 → uvicorn。没有单独的 worker；多实例靠 Redis 消费组和 `FOR UPDATE SKIP LOCKED` 去重。
 
-- `src/api/` — FastAPI 路由（features / operators / bindings / gde / schedules / batches / values），统一前缀 `/api`；`schemas.py` 是请求/响应模型；`gde.py` 把 fleet、recipe 等元数据转发给绑定页面。
-- `src/service/` — 业务逻辑：`feature.py`（特征，新版本发布时旧版本自动下线）、`operator.py`（算子，同名再提交版本 +1）、`review.py`（共用状态流转）、`binding.py`（按算子的绑定修订）、`subscription.py`（按腔室汇总 recipe、对账同步 GDE 订阅）、批次、取值。
-- `src/engine/` — 后台计算：`live.py` 消费 Redis Stream `gde:run:done` 做实时计算；`batch_runner.py` 补算/重算；`sandbox.py` 用 pebble 进程池隔离执行算子代码；`writer.py` 写结果；`jobs.py` 定时任务：实时批次收尾 + 每分钟同步未同步的腔室订阅。后台任务由 `_supervise` 包装，异常 10 秒后重启。
+- `src/api/` — FastAPI 路由（features / operators / bindings / gde / schedules / batches / values），统一前缀 `/api`；`schemas.py` 是请求/响应模型；`gde.py` 把 fleet、腔室、recipe、执行列表等元数据转发给前端（绑定页、试跑选 run_id）。
+- `src/service/` — 业务逻辑：`feature.py`（特征，新版本发布时旧版本自动下线）、`operator.py`（算子，同名再提交版本 +1）、`review.py`（共用状态流转）、`binding.py`（按算子的绑定修订，spec 只有 recipes 列表）、`subscription.py`（`recipe_subscription` 按 recipe 汇总 wanted、对账同步 GDE 订阅）、`meta.py`（`feature_meta`/`operator_meta`：显示名称、机台类型，PATCH 直接改、不评审）、`schedule.py`（以 recipe 为键）、批次（按 recipe，覆盖全部腔室）、取值。
+- `src/engine/` — 后台计算：`live.py` 消费 Redis Stream `gde:run:done` 做实时计算；`batch_runner.py` 补算/重算；`sandbox.py` 用 pebble 进程池隔离执行算子代码；`writer.py` 写结果；`jobs.py` 定时任务：实时批次收尾 + 每分钟同步未同步的 recipe 订阅。后台任务由 `_supervise` 包装，异常 10 秒后重启。
 - `src/eifeature/` — 算子运行库（算子代码里 `from eifeature import gde, ops, Skip`）：`fetch(run_id)` 取数，`compute(data)` 纯计算，数据不合格 `raise Skip("REASON_CODE")`。
-- `src/model/` — `schema.sql` 建表（无迁移工具；本版与旧的“特征包 + 按腔室绑定”表结构不兼容，旧库需先清空），`tables.py` 为 SQLAlchemy ORM 模型（DeclarativeBase）。
+- `src/model/` — `schema.sql` 建表（无迁移工具；与旧的“特征包 + 按腔室绑定”表结构不兼容，旧库需先清空；从“recipe × 腔室”绑定升级时开头的 DO 块会转换绑定修订，并删除重建 chamber_subscription、feature_batch、feature_value），`tables.py` 为 SQLAlchemy ORM 模型（DeclarativeBase）。
 - `src/util/` — config、db（异步引擎、`session()` 事务、`lock()` advisory lock）、storage（MinIO/本地，对象键 `features/{feature_id}/operators/{name}/{version}/`）、auth、errors、stream、gde 等。
 
 ## 约定

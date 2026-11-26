@@ -76,12 +76,12 @@ class GdeClient(Protocol):
     def recipe_chambers(self, recipe: str) -> list[ToolChamber]:
         """跑过该 recipe 的全部机台、腔室；recipe 不存在抛 GdeNotFound。"""
 
-    # ---- 订阅
-    def subscribe(self, tool: str, chamber: str, recipes: list[str]) -> str:
-        """创建订阅，返回订阅 ID。"""
+    def chamber_recipes(self, chamber: str, start: datetime, end: datetime) -> list[str]:
+        """腔室在 [start, end) 内跑过的 recipe；腔室不存在抛 GdeNotFound。"""
 
-    def update_subscription(self, sub_id: str, recipes: list[str]) -> None:
-        """修改订阅的 recipe 范围。"""
+    # ---- 订阅（按 recipe：GDE 自动推送该 recipe 在所有机台 / 腔室上的执行，包括以后新增的腔室）
+    def subscribe(self, recipe: str) -> str:
+        """订阅一个 recipe，返回订阅 ID。"""
 
     def pause_subscription(self, sub_id: str) -> None:
         """暂停订阅。"""
@@ -96,8 +96,8 @@ class GdeClient(Protocol):
         """查询订阅状态。"""
 
     # ---- 执行与数据
-    def list_runs(self, chamber: str, recipes: list[str], start: datetime, end: datetime) -> list[Run]:
-        """列出腔室在 [start, end) 内、属于 recipes 的执行。"""
+    def list_runs(self, recipe: str, start: datetime, end: datetime, chamber: str | None = None) -> list[Run]:
+        """列出 recipe 在 [start, end) 内的执行（按结束时间升序）；指定 chamber 时只列该腔室的。"""
 
     def run_info(self, run_id: str) -> Run:
         """查询单次执行的元数据；不存在抛 GdeNotFound。"""
@@ -192,16 +192,18 @@ class FakeGdeClient:
             raise GdeNotFound(f"recipe {recipe} 不存在")
         return out
 
+    def chamber_recipes(self, chamber, start, end):
+        """见 GdeClient.chamber_recipes。假数据不区分时间范围。"""
+        if chamber not in self.chambers:
+            raise GdeNotFound(f"腔室 {chamber} 不存在")
+        return sorted(self.chambers[chamber][1])
+
     # ---- 订阅
-    def subscribe(self, tool, chamber, recipes):
+    def subscribe(self, recipe):
         """见 GdeClient.subscribe。"""
         sub_id = f"gde-sub-{next(self._ids):04d}"
-        self.subs[sub_id] = {"tool": tool, "chamber": chamber, "recipes": list(recipes), "status": "running"}
+        self.subs[sub_id] = {"recipe": recipe, "status": "running"}
         return sub_id
-
-    def update_subscription(self, sub_id, recipes):
-        """见 GdeClient.update_subscription。"""
-        self._sub(sub_id)["recipes"] = list(recipes)
 
     def pause_subscription(self, sub_id):
         """见 GdeClient.pause_subscription。"""
@@ -220,13 +222,18 @@ class FakeGdeClient:
         return self._sub(sub_id)["status"]
 
     # ---- 执行与数据
-    def list_runs(self, chamber, recipes, start, end):
-        """每个整点的 :15 和 :45 各生成一次执行，只保留 recipe 在 recipes 中的。"""
+    def list_runs(self, recipe, start, end, chamber=None):
+        """每个腔室每个整点的 :15 和 :45 各生成一次执行（不晚于当前时间），只保留属于该 recipe 的。"""
         self._maybe_fail()
-        if chamber not in self.chambers:
+        if chamber is not None and chamber not in self.chambers:
             raise GdeNotFound(f"腔室 {chamber} 不存在")
-        runs = (self._make_run(f"RUN-{chamber}-{at:%Y%m%d%H%M}", chamber, at) for at in _run_times(start, end))
-        return [run for run in runs if run.recipe in recipes]
+        names = [chamber] if chamber else sorted(c for c, (_, rs) in self.chambers.items() if recipe in rs)
+        end = min(end, datetime.now(ZONE))  # 还没发生的执行不返回
+        runs = [
+            self._make_run(f"RUN-{c}-{at:%Y%m%d%H%M}", c, at)
+            for c in names for at in _run_times(start, end)
+        ]
+        return sorted((r for r in runs if r.recipe == recipe), key=lambda r: (r.end_at, r.chamber))
 
     def run_info(self, run_id):
         """见 GdeClient.run_info。"""

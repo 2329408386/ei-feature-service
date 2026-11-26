@@ -7,8 +7,20 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query
 
-from src.api.schemas import FeatureDetail, FeatureOut, FeatureRetireOut, OperatorOut, Page, RetireIn, ReviewIn, Status
+from src.api.schemas import (
+    FeatureDetail,
+    FeatureMetaIn,
+    FeatureMetaOut,
+    FeatureOut,
+    FeatureRetireOut,
+    OperatorOut,
+    Page,
+    RetireIn,
+    ReviewIn,
+    Status,
+)
 from src.service import feature as svc
+from src.service import meta
 from src.util.auth import User
 
 router = APIRouter(prefix="/features", tags=["特征"])
@@ -26,12 +38,25 @@ async def list_features(
     status: Status | None = None,
     q: str | None = None,
     feature_id: str | None = None,
+    tool_type: str | None = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 20,
 ):
-    """分页查询特征，可按状态、关键字、特征 ID 过滤。"""
-    rows, total = await svc.list_features(status, q, feature_id, page, page_size)
+    """分页查询特征，可按状态、关键字（ID / 名称 / 描述）、特征 ID、机台类型过滤。"""
+    rows, total = await svc.list_features(status, q, feature_id, tool_type, page, page_size)
     return {"items": rows, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/tool-types", response_model=list[str])
+async def tool_types():
+    """已用过的机台类型，供筛选下拉框。"""
+    return await meta.tool_types()
+
+
+@router.patch("/{feature_id}", response_model=FeatureMetaOut)
+async def update_meta(feature_id: str, body: FeatureMetaIn, user: User):
+    """修改特征的显示名称 / 机台类型（只改传入的字段）。feature_id 不变，对全部版本生效，不需要评审。"""
+    return await meta.set_feature(feature_id, body.model_dump(exclude_unset=True), user)
 
 
 @router.get(PATH, response_model=FeatureDetail)

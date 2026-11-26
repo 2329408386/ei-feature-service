@@ -39,6 +39,10 @@ class _Reviewed:
 class Feature(_Reviewed, Base):
     __tablename__ = "feature"
 
+    # 不映射的属性：由 service.meta.attach 从 feature_meta 填入
+    display_name = None
+    tool_type = None
+
     feature_id: Mapped[str] = mapped_column(Text, primary_key=True)
     version: Mapped[str] = mapped_column(Text, primary_key=True)
 
@@ -58,10 +62,32 @@ class Operator(_Reviewed, Base):
     code_uri: Mapped[str]
     code_hash: Mapped[str]
 
+    display_name = None  # 不映射：由 service.meta.attach 从 operator_meta 填入
+
     @property
     def ref(self) -> str:
         """形如 feature_id/name@version。"""
         return op_ref(self.feature_id, self.name, self.version)
+
+
+class FeatureMeta(Base):
+    __tablename__ = "feature_meta"
+
+    feature_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str | None]
+    tool_type: Mapped[str | None]
+    updated_by: Mapped[str]
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class OperatorMeta(Base):
+    __tablename__ = "operator_meta"
+
+    feature_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    operator: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str | None]
+    updated_by: Mapped[str]
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
 class OperatorBinding(Base):
@@ -96,19 +122,15 @@ class BindingItem(Base):
     operator: Mapped[str] = mapped_column(Text, primary_key=True)
     revision: Mapped[int] = mapped_column(Integer, primary_key=True)
     recipe: Mapped[str] = mapped_column(Text, primary_key=True)
-    chamber: Mapped[str] = mapped_column(Text, primary_key=True)
-    tool: Mapped[str]
     version: Mapped[int]
 
 
-class ChamberSubscription(Base):
-    __tablename__ = "chamber_subscription"
+class RecipeSubscription(Base):
+    __tablename__ = "recipe_subscription"
 
-    chamber: Mapped[str] = mapped_column(Text, primary_key=True)
-    tool: Mapped[str]
-    recipes: Mapped[list] = mapped_column(default=list)
+    recipe: Mapped[str] = mapped_column(Text, primary_key=True)
+    wanted: Mapped[bool] = mapped_column(default=False)
     gde_sub_id: Mapped[str | None]
-    synced_recipes: Mapped[list | None]
     attempts: Mapped[int] = mapped_column(default=0)
     last_error: Mapped[str | None]
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
@@ -121,9 +143,8 @@ class FeatureBatch(Base):
     batch_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     mode: Mapped[str]  # live / fill / overwrite
     status: Mapped[str]  # queued / running / done / failed / cancelled
-    chamber: Mapped[str]
+    recipe: Mapped[str]
     operators: Mapped[list | None]
-    plan: Mapped[dict | None]
     data_from: Mapped[datetime]
     data_to: Mapped[datetime]
     reason: Mapped[str | None]

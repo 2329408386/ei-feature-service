@@ -6,32 +6,30 @@
 from sqlalchemy import func, select
 
 from src.api.schemas import BatchIn
-from src.model.tables import BindingItem, FeatureBatch, OperatorBinding, op_ref
+from src.model.tables import BindingItem, FeatureBatch, op_ref
 from src.service.refs import parse_ref
+from src.service.subscription import active_items
 from src.util import db
 from src.util.config import BATCH_MAX_DAYS
 from src.util.errors import invalid, invalid_state, not_found
 from src.util.timeutil import day_range, now, today
 
 
-async def active_plan(s, chamber: str) -> dict[str, list[str]]:
-    """腔室当前生效绑定展开后的 {算子引用: [recipe]}。"""
+async def active_operators(s, recipe: str) -> list[str]:
+    """该 recipe 当前生效绑定中的算子引用，排序。"""
     rows = (await s.execute(
-        select(BindingItem.feature_id, BindingItem.operator, BindingItem.version, BindingItem.recipe).join(
-            OperatorBinding,
-            (OperatorBinding.feature_id == BindingItem.feature_id) & (OperatorBinding.operator == BindingItem.operator)
-            & (OperatorBinding.revision == BindingItem.revision),
-        ).where(OperatorBinding.status == "active", BindingItem.chamber == chamber)
+        active_items(BindingItem.feature_id, BindingItem.operator, BindingItem.version)
+        .where(BindingItem.recipe == recipe)
     )).tuples().all()
-    out: dict[str, list[str]] = {}
-    for fid, op, ver, recipe in rows:
-        out.setdefault(op_ref(fid, op, ver), []).append(recipe)
-    return out
+    return sorted(op_ref(*r) for r in rows)
 
 
 async def create(body: BatchIn, user: str) -> FeatureBatch:
-    """校验日期范围和算子（须在该腔室的生效绑定中）后创建排队中的补算 / 重算批次，并记下 recipe → 算子快照。"""
-    chamber, refs, start, end = body.chamber, sorted(set(body.operators)), body.from_, body.to
+    """校验日期范围和算子（须在该 recipe 的生效绑定中）后创建排队中的补算 / 重算批次。
+
+    批次覆盖该 recipe 在所有机台 / 腔室上的执行（经 GDE 拉清单）。
+    """
+    recipe, refs, start, end = body.recipe, sorted(set(body.operators)), body.from_, body.to
     errors = []
     if start > end:
         errors.append({"path": "from", "message": "开始日期不能晚于结束日期"})
@@ -43,32 +41,28 @@ async def create(body: BatchIn, user: str) -> FeatureBatch:
     if bad:
         errors.append({"path": "operators", "message": f"算子引用须形如 feature_id/operator@version：{'、'.join(bad)}"})
     async with db.session() as s:
-        bound = await active_plan(s, chamber)
+        bound = set(await active_operators(s, recipe))
         if not bound:
-            raise invalid_state(f"腔室 {chamber} 没有生效的算子绑定", "none")
+            raise invalid_state(f"recipe {recipe} 没有生效的算子绑定", "none")
         missing = [r for r in refs if r not in bound and r not in bad]
         if missing:
-            errors.append({"path": "operators", "message": f"不在腔室 {chamber} 的生效绑定中：{'、'.join(missing)}"})
+            errors.append({"path": "operators", "message": f"不在 recipe {recipe} 的生效绑定中：{'、'.join(missing)}"})
         if errors:
             raise invalid("VALIDATION_ERROR", "参数错误", errors)
-        plan: dict[str, list[str]] = {}
-        for ref in refs:
-            for recipe in bound[ref]:
-                plan.setdefault(recipe, []).append(ref)
         data_from, data_to = day_range(start, end)
         row = FeatureBatch(
-            mode=body.mode, status="queued", chamber=chamber, operators=refs, plan=dict(sorted(plan.items())),
+            mode=body.mode, status="queued", recipe=recipe, operators=refs,
             data_from=data_from, data_to=data_to, reason=body.reason, created_by=user,
         )
         s.add(row)
     return row
 
 
-async def list_batches(chamber: str | None, mode: str | None, status: str | None, page: int, size: int):
+async def list_batches(recipe: str | None, mode: str | None, status: str | None, page: int, size: int):
     """分页查询批次，新的在前。返回 (rows, total)。"""
     cond = []
-    if chamber:
-        cond.append(FeatureBatch.chamber == chamber)
+    if recipe:
+        cond.append(FeatureBatch.recipe == recipe)
     if mode:
         cond.append(FeatureBatch.mode == mode)
     if status:
